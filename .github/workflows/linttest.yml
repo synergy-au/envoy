@@ -13,12 +13,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3.1.0
 
-      - name: Install dependencies
-        run: |
-          pip install bandit[toml]
-
       - name: Security check - Bandit
-        uses: ioggstream/bandit-report-artifacts@v0.0.2
+        uses: joshvote/bandit-report-artifacts
         with:
           project_path: .
           ignore_failure: false
