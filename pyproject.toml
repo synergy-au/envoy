@@ -1,6 +1,9 @@
 [tool.pytest.ini_options]
-pythonpath = "server"
+pythonpath = ["server", "admin"]
 testpaths = "tests"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
 
 [build-system]
 requires = ["setuptools >= 40.9.0", "wheel"]

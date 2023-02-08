@@ -1,0 +1,77 @@
+name: Linting and Testing
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]  
+  workflow_dispatch:
+
+jobs:
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+
+      - name: Security check - Bandit
+        uses: ioggstream/bandit-report-artifacts@v0.0.2
+        with:
+          project_path: .
+          ignore_failure: false
+          config_file: pyproject.toml
+          
+      - name: Security check report artifacts
+        uses: actions/upload-artifact@v1
+        if: failure()
+        with:
+          name: Security report
+          path: output/security_report.txt
+
+  flake8_py39:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4.2.0
+        with:
+          python-version: '3.9'
+    
+      - name: Setup flake8 annotations
+        uses: rbialon/flake8-annotations@v1
+        
+      - name: Lint with flake8
+        if: always()
+        run: |
+          pip install flake8
+          flake8 . --count --statistics
+  
+  pytest_py39:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3.1.0
+        
+      - name: Setup Python
+        uses: actions/setup-python@v4.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install .
+      
+      - name: Run Pytest
+        run: |
+          sudo apt install -y postgresql
+          pip install -r tests/requirements.txt
+          pytest --junit-xml=.test_report.xml
+
+      - name: Upload Results
+        uses: test-summary/action@v1
+        with:
+          paths: .test_report.xml
+        if: always()
+
