@@ -13,6 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3.1.0
 
+      - name: Install dependencies
+        run: |
+          pip install bandit[toml]
+
       - name: Security check - Bandit
         uses: ioggstream/bandit-report-artifacts@v0.0.2
         with:
@@ -36,8 +40,8 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4.2.0
         with:
-          python-version: '3.9'
-    
+          python-version: '3.11'
+
       - name: Setup flake8 annotations
         uses: rbialon/flake8-annotations@v1
         
