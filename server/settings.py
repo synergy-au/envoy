@@ -1,6 +1,6 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from pydantic import BaseSettings, PostgresDsn
+from pydantic import BaseSettings
 
 
 class AppSettings(BaseSettings):
