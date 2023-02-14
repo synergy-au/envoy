@@ -1,8 +1,7 @@
-from fastapi import FastAPI, Depends
+from fastapi import Depends, FastAPI
 
+from server.api.depends import LFDIAuthDepends
 from server.settings import AppSettings
-from server.depends import LFDIAuthDepends
-
 
 settings = AppSettings()
 lfdi_auth = LFDIAuthDepends(settings.cert_pem_header)

@@ -2,12 +2,20 @@ import pytest
 
 from fastapi import Request, HTTPException
 
-from server.depends import LFDIAuthDepends
+from server.api.depends import LFDIAuthDepends
 from server.main import settings
 from .resources import TEST_CERTIFICATE_PEM
 
 
 bs_cert_pem_header = bytes(f"{settings.cert_pem_header}", "ascii")
+
+
+def test_generate_lfdi_from_fingerprint():
+    lfdi = LFDIAuthDepends._cert_fingerprint_to_lfdi(
+        "0x3e4f45ab31edfe5b67e343e5e4562e31984e23e5349e2ad745672ed145ee213a"
+    )  # fingerprint example from standard
+
+    assert lfdi == "0x3e4f45ab31edfe5b67e343e5e4562e31984e23e5"
 
 
 @pytest.mark.asyncio
