@@ -9,7 +9,7 @@ class AppSettings(BaseSettings):
     openapi_prefix: str = ""
     openapi_url: str = "/openapi.json"
     redoc_url: str = "/redoc"
-    title: str = "utility-server"
+    title: str = "envoy"
     version: str = "0.0.0"
 
     cert_pem_header: str = "x-forwarded-client-cert"
