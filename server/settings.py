@@ -19,6 +19,8 @@ class AppSettings(BaseSettings):
 
     class Config:
         validate_assignment = True
+        env_file: str = '.env'
+        env_file_encoding: str = 'utf-8'
 
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:

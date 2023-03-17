@@ -1,7 +1,7 @@
 # envoy
 2030.5 / CSIP-AUS utility server implementation
 
-## Directory structure
+## Project structure
 
 Top level directories define fastapi apps that use a common auth model
 
@@ -10,7 +10,56 @@ Top level directories define fastapi apps that use a common auth model
 
 docstrings on `__init__.py` should describe the structure in greater detail
 
+## Running Locally
 
-## Deployment structure
+### Locally Hosted
 
+To run Envoy locally as a development environment you'll need to setup a local postgresql database and python. This guide will assume that you have python 3.10+ and postgresql 14+ installed.
 
+1. Install dependencies for main server + tests
+
+`pip install -r requirements.txt`
+`pip install -r tests/requirements.txt`
+
+2. Double check tests are running
+
+`pytest`
+
+3. Create an "envoy" database
+
+```
+sudo -u postgres psql
+postgres=# create database envoydb;
+postgres=# create user envoyuser with encrypted password 'mypass';
+postgres=# grant all privileges on database envoydb to envoyuser;
+```
+
+4. Create `.env` file
+
+Envoy is is dependent on a number of environment variables listed in the table below.
+
+| Environment Variable | Description |
+| --- | --- |
+| `DATABASE_URL` | The postgres database connection string eg: `postgresql+asyncpg://envoyuser:mypass@localhost:5432/envoydb` (NOTE - `asyncpg` is required for fastapi) |
+
+We recommend adding these to a `.env` file in the root directory so that they are accessible by both fastapi and docker.
+
+5. Install local copy
+
+`pip install -e ./`
+
+6. Apply alembic migrations to the database schema
+
+`cd server/`
+
+If there are no migrations in `server/alembic/versions` - first run `alembic revision --autogenerate -m "Init"`
+
+`alembic upgrade head`
+
+7. Start server
+
+`python server/main.py`
+
+### Docker Hosted
+
+TODO: Depending on Dockerfile
