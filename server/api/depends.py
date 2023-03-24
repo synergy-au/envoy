@@ -34,7 +34,8 @@ class LFDIAuthDepends:
         # generate lfdi
         lfdi = self.generate_lfdi_from_pem(cert_fingerprint)
 
-        client_ids = await auth.select_client_ids_using_lfdi(lfdi, db.session)
+        async with db():
+            client_ids = await auth.select_client_ids_using_lfdi(lfdi, db.session)
 
         if not client_ids:
             raise HTTPException(
@@ -69,10 +70,13 @@ class LFDIAuthDepends:
 
     @staticmethod
     def _cert_fingerprint_to_lfdi(cert_fingerprint: str) -> str:
-        return cert_fingerprint[:42]
+        """The LFDI SHALL be the certificate fingerprint left-truncated to 160 bits (20 octets)."""
+        return cert_fingerprint[:40]
 
     @staticmethod
     def _cert_pem_to_cert_fingerprint(cert_pem: str) -> str:
+        """The certificate fingerprint is the result of performing a SHA256 operation over the whole DER-encoded
+        certificate and is used to derive the SFDI and LFDI"""
         # URL/percent decode
         cert_pem = urllib.parse.unquote(cert_pem)
 
