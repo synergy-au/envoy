@@ -71,7 +71,14 @@ If there are no migrations in `server/alembic/versions` - first run `alembic rev
 
 `alembic upgrade head`
 
-8. Start server
+8. You may want to put some aggregators along with their associated lFDIs into the database created in Step 3. We can use the base config from the testing environment for this purpose:
+
+`sudo -u postgres psql -d envoydb -a -f tests/data/sql/base_config.sql`
+
+The Postman collection in postman/envoy.postman_collection.json uses certificate 1 (`tests/data/certificates/certificate1.py`)
+ to make it requests and will require the database to be populated with this base config.
+
+9. Start server
 
 `python server/main.py`
 
