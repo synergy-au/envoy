@@ -4,9 +4,12 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi_async_sqlalchemy import SQLAlchemyMiddleware
 
+from envoy.server.api import routers
 from envoy.server.api.depends import LFDIAuthDepends
-from envoy.server.api.error_handler import general_exception_handler, http_exception_handler
-from envoy.server.api.sep2.time import router as tm_router
+from envoy.server.api.error_handler import (
+    general_exception_handler,
+    http_exception_handler,
+)
 from envoy.server.settings import AppSettings
 
 
@@ -20,7 +23,8 @@ def generate_app(new_settings: AppSettings):
     lfdi_auth = LFDIAuthDepends(new_settings.cert_pem_header)
     new_app = FastAPI(**new_settings.fastapi_kwargs, dependencies=[Depends(lfdi_auth)])
     new_app.add_middleware(SQLAlchemyMiddleware, **new_settings.db_middleware_kwargs)
-    new_app.include_router(tm_router, tags=["time"])
+    for router in routers:
+        new_app.include_router(router)
     new_app.add_exception_handler(HTTPException, http_exception_handler)
     new_app.add_exception_handler(Exception, general_exception_handler)
     return new_app
