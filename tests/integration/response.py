@@ -3,10 +3,11 @@ from typing import Any, Optional
 
 import httpx
 
-from envoy.server.api.response import SEP_XML_MIME
+from envoy.server.api.response import LOCATION_HEADER_NAME, SEP_XML_MIME
 from envoy.server.schema.sep2.error import ErrorResponse, ReasonCodeType
 from tests.data.certificates.certificate3 import TEST_CERTIFICATE_PEM as EXPIRED_PEM
 from tests.data.certificates.certificate_noreg import TEST_CERTIFICATE_PEM as UNKNOWN_PEM
+from tests.integration.http import HTTPMethod
 from tests.integration.integration_server import cert_pem_header
 
 
@@ -16,8 +17,8 @@ def assert_response_header(response: httpx.Response,
     """Simple assert on a response for a particular response code. Will include response body in assert message in
     the event of failure. Otherwise content stream will remain unread if this assert succeeds"""
 
-    # short cirtcuit success
-    actual_content_type: str = response.headers["Content-Type"]
+    # short circuit success
+    actual_content_type: Optional[str] = response.headers["Content-Type"] if "Content-Type" in response.headers else None
     if response.status_code == expected_status_code:
         if expected_content_type is None or actual_content_type == expected_content_type:
             return
@@ -30,10 +31,21 @@ def assert_response_header(response: httpx.Response,
 def assert_error_response(response: httpx.Response):
     """Asserts that the response content (which will be consumed) maps to a sep2 Error object"""
     body = read_response_body_string(response)
+    if response.request.method == "HEAD":
+        assert len(body) == 0, "Expected an empty response for a HEAD request"
+        return  # can't validate something that isn't there
+
     parsed_response: ErrorResponse = ErrorResponse.from_xml(body)
     assert type(parsed_response.reasonCode) == ReasonCodeType
     assert parsed_response.message is None or type(parsed_response.message) == str
 
+
+def read_location_header(response: httpx.Response) -> str:
+    """Attempts to read the Location header - throws an exception if not found"""
+    if LOCATION_HEADER_NAME not in response.headers:
+        raise Exception(f"Location header '{LOCATION_HEADER_NAME}' was not returned in response (status code {response.status_code}). Headers: {response.headers.keys()}")
+    return response.headers[LOCATION_HEADER_NAME]
+    
 
 def read_response_body_string(response: httpx.Response) -> str:
     """Takes a response - reads the body as a string"""

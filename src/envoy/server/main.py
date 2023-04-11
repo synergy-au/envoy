@@ -6,10 +6,7 @@ from fastapi_async_sqlalchemy import SQLAlchemyMiddleware
 
 from envoy.server.api import routers
 from envoy.server.api.depends import LFDIAuthDepends
-from envoy.server.api.error_handler import (
-    general_exception_handler,
-    http_exception_handler,
-)
+from envoy.server.api.error_handler import general_exception_handler, http_exception_handler
 from envoy.server.settings import AppSettings
 
 
