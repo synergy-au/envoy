@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from envoy.server.mapper.exception import InvalidMappingError
+from envoy.server.exception import InvalidMappingError
 from envoy.server.model.site import Site
 from envoy.server.schema.csip_aus.connection_point import ConnectionPointLink
 from envoy.server.schema.sep2.end_device import (
@@ -10,6 +10,7 @@ from envoy.server.schema.sep2.end_device import (
     EndDeviceRequest,
     EndDeviceResponse,
 )
+from envoy.server.settings import settings
 
 
 class EndDeviceMapper:
@@ -49,7 +50,8 @@ class EndDeviceMapper:
             sfdi=end_device.sFDI,
             changed_time=changed_time,
             aggregator_id=aggregator_id,
-            device_category=device_category
+            device_category=device_category,
+            timezone_id=settings.default_timezone
         )
 
 
@@ -62,7 +64,7 @@ class EndDeviceListMapper:
             {
                 "href": "/edev",
                 "all_": site_count,
-                "result": len(site_list),
+                "results": len(site_list),
                 "EndDevice": [
                     EndDeviceMapper.map_to_response(site) for site in site_list
                 ],
