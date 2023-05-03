@@ -1,7 +1,7 @@
 import enum
 from typing import Optional
 
-from pydantic_xml import BaseXmlModel, attr
+from pydantic_xml import BaseXmlModel, attr, element
 from pydantic_xml.element import SearchMode
 
 """ Abstract
@@ -28,8 +28,11 @@ class PollRateType(BaseXmlModelWithNS):
     pollRate: Optional[int] = attr()
 
 
+DEFAULT_POLLRATE = PollRateType(pollRate=900)
+
+
 class Resource(BaseXmlModelWithNS):
-    pass
+    href: str = attr()
 
 
 class PENType(int):
@@ -67,7 +70,7 @@ class SubscribableList(SubscribableResource):
 
 
 class Link(Resource):
-    href: str = attr()
+    pass
 
 
 class ListLink(Link):
@@ -84,3 +87,19 @@ class HexBinary32(str):
         if len(v) > 8:
             raise ValueError("HexBinary32 max length of 8.")
         return cls(v)
+
+
+class FunctionSetAssignmentsBase(Resource):
+    # Optional (0..1) Links
+    TimeLink: Optional[Link] = element()
+
+    # Optional (0..1) ListLinks
+    CustomerAccountListLink: Optional[ListLink] = element()
+    DemandResponseProgramListLink: Optional[ListLink] = element()
+    DERProgramListLink: Optional[ListLink] = element()
+    FileListLink: Optional[ListLink] = element()
+    MessagingProgramListLink: Optional[ListLink] = element()
+    PrepaymentListLink: Optional[ListLink] = element()
+    ResponseSetListLink: Optional[ListLink] = element()
+    TariffProfileListLink: Optional[ListLink] = element()
+    UsagePointListLink: Optional[ListLink] = element()
