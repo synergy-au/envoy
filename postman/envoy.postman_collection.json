@@ -38,7 +38,7 @@
 					"response": []
 				},
 				{
-					"name": "/edev/3 (EndDevice)",
+					"name": "/edev/3/cp (ConnectionPoint)",
 					"protocolProfileBehavior": {
 						"disableBodyPruning": true
 					},
@@ -61,13 +61,53 @@
 							"raw": ""
 						},
 						"url": {
-							"raw": "{{HOST}}/edev/{{EDEV_ID}}",
+							"raw": "{{HOST}}/edev/{{EDEV_ID}}/cp",
 							"host": [
 								"{{HOST}}"
 							],
 							"path": [
 								"edev",
-								"{{EDEV_ID}}"
+								"{{EDEV_ID}}",
+								"cp"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "/edev/3/cp (ConnectionPoint Upsert)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "x-forwarded-client-cert",
+								"value": "{{CLIENT_CERTIFICATE}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/sep+xml",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "<ConnectionPoint xmlns=\"http://csipaus.org/ns\">\n    <id>1111111111</csipaus:id>\n</ConnectionPoint>\n",
+							"options": {
+								"raw": {
+									"language": "xml"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{HOST}}/edev/{{EDEV_ID}}/cp",
+							"host": [
+								"{{HOST}}"
+							],
+							"path": [
+								"edev",
+								"{{EDEV_ID}}",
+								"cp"
 							]
 						}
 					},
@@ -96,7 +136,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<EndDevice xmlns=\"urn:ieee:std:2030.5:ns\">\r\n    <sFDI>789654321005</sFDI>\r\n    <changedTime>1379905200</changedTime>\r\n</EndDevice>",
+							"raw": "<EndDevice xmlns=\"urn:ieee:std:2030.5:ns\">\r\n    <sFDI>1234</sFDI>\r\n    <lFDI>01020304</lFDI>\r\n    <deviceCategory>0f</deviceCategory>\r\n</EndDevice>\r\n",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -110,36 +150,6 @@
 							],
 							"path": [
 								"edev"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "/edev/3 (EndDevice Registration)",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "x-forwarded-client-cert",
-								"value": "{{CLIENT_CERTIFICATE}}",
-								"type": "text"
-							},
-							{
-								"key": "Accept",
-								"value": "application/sep+xml",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{HOST}}/edev/{{EDEV_ID}}/reg",
-							"host": [
-								"{{HOST}}"
-							],
-							"path": [
-								"edev",
-								"{{EDEV_ID}}",
-								"reg"
 							]
 						}
 					},
@@ -175,42 +185,6 @@
 								{
 									"key": "1",
 									"value": "2"
-								}
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "/edev/3 (EndDevice FunctionSetAssignments)",
-					"request": {
-						"method": "GET",
-						"header": [
-							{
-								"key": "x-forwarded-client-cert",
-								"value": "{{CLIENT_CERTIFICATE}}",
-								"type": "text"
-							},
-							{
-								"key": "Accept",
-								"value": "application/sep+xml",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{HOST}}/edev/{{EDEV_ID}}/fsal?",
-							"host": [
-								"{{HOST}}"
-							],
-							"path": [
-								"edev",
-								"{{EDEV_ID}}",
-								"fsal"
-							],
-							"query": [
-								{
-									"key": "",
-									"value": ""
 								}
 							]
 						}
@@ -256,7 +230,7 @@
 			"name": "Device Capability",
 			"item": [
 				{
-					"name": "/dcap",
+					"name": "/dcap (Device Capability)",
 					"protocolProfileBehavior": {
 						"disabledSystemHeaders": {}
 					},
@@ -275,12 +249,12 @@
 							}
 						],
 						"url": {
-							"raw": "{{HOST}}/dcap (DeviceCapabilities)",
+							"raw": "{{HOST}}/dcap",
 							"host": [
 								"{{HOST}}"
 							],
 							"path": [
-								"dcap (DeviceCapabilities)"
+								"dcap"
 							]
 						}
 					},
@@ -778,6 +752,42 @@
 							"path": [
 								"tp",
 								"{{TP_ID}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "/edev/3/tp (TariffProfileList Site Scoped)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "x-forwarded-client-cert",
+								"value": "{{CLIENT_CERTIFICATE}}",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/sep+xml",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{HOST}}/edev/{{EDEV_ID}}/tp?l=10",
+							"host": [
+								"{{HOST}}"
+							],
+							"path": [
+								"edev",
+								"{{EDEV_ID}}",
+								"tp"
+							],
+							"query": [
+								{
+									"key": "l",
+									"value": "10"
+								}
 							]
 						}
 					},
