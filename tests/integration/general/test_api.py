@@ -10,6 +10,7 @@ from tests.integration.response import assert_response_header, read_response_bod
 
 EMPTY_XML_DOC = '<?xml version="1.0" encoding="UTF-8"?>\n<tag/>'
 
+
 # All of our endpoints with their supported method types
 # fmt: off
 ALL_ENDPOINTS_WITH_SUPPORTED_METHODS: list[tuple[list[HTTPMethod], str]] = [
@@ -25,9 +26,8 @@ ALL_ENDPOINTS_WITH_SUPPORTED_METHODS: list[tuple[list[HTTPMethod], str]] = [
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.POST, HTTPMethod.PUT], "/edev/1/cp"),
 
     # function-set-assignments function set
-    # TODO Re-enable after DOE funcset is merged in
-    #([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/fsa"),
-    # ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/fsa/1"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/fsa"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/fsa/1"),
 
     # Pricing function set
     ([HTTPMethod.GET, HTTPMethod.HEAD], "/pricing/rt/1"),
@@ -42,6 +42,12 @@ ALL_ENDPOINTS_WITH_SUPPORTED_METHODS: list[tuple[list[HTTPMethod], str]] = [
     ([HTTPMethod.GET, HTTPMethod.HEAD], "/tp/1/1/rc/2022-03-05/1/tti/01%3A02"),
     ([HTTPMethod.GET, HTTPMethod.HEAD], "/tp/1/1/rc/2022-03-05/1/tti/01%3A02/cti/100"),
     ([HTTPMethod.GET, HTTPMethod.HEAD], "/tp/1/1/rc/2022-03-05/1/tti/01%3A02/cti/100/1"),
+
+    # derp/derc function set
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/derp"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/derp/doe"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/derp/doe/derc"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/derp/doe/derc/2022-05-07"),
 ]
 # fmt: on
 
