@@ -6,7 +6,7 @@ from http import HTTPStatus
 from fastapi import HTTPException, Request
 from fastapi_async_sqlalchemy import db
 
-from envoy.server.crud import auth
+from envoy.server.crud.auth import select_client_ids_using_lfdi
 
 
 class LFDIAuthDepends:
@@ -20,10 +20,11 @@ class LFDIAuthDepends:
     def __init__(self, cert_pem_header: str):
         self.cert_pem_header = cert_pem_header
 
-    async def __call__(self, request: Request) -> int:
+    async def __call__(self, request: Request):
         if self.cert_pem_header not in request.headers.keys():
-            raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                                detail="Missing certificate PEM header from gateway.")
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail="Missing certificate PEM header from gateway."
+            )
 
         cert_fingerprint = request.headers[self.cert_pem_header]
 
@@ -31,13 +32,13 @@ class LFDIAuthDepends:
         lfdi = self.generate_lfdi_from_pem(cert_fingerprint)
 
         async with db():
-            client_ids = await auth.select_client_ids_using_lfdi(lfdi, db.session)
+            client_ids = await select_client_ids_using_lfdi(lfdi, db.session)
 
         if not client_ids:
             raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail="Unrecognised certificate ID.")
 
-        request.state.certificate_id = client_ids["certificate_id"]
-        request.state.aggregator_id = client_ids["aggregator_id"]
+        request.state.certificate_id = client_ids.certificate_id
+        request.state.aggregator_id = client_ids.aggregator_id
 
     def generate_lfdi_from_pem(self, cert_pem: str) -> str:
         """This function generates the sep2 / 2030.5-2018 lFDI (Long-form device identifier) from the device's
@@ -65,18 +66,18 @@ class LFDIAuthDepends:
         return cert_fingerprint[:40]
 
     @staticmethod
-    def _cert_pem_to_cert_fingerprint(cert_pem: str) -> str:
+    def _cert_pem_to_cert_fingerprint(cert_pem_b64: str) -> str:
         """The certificate fingerprint is the result of performing a SHA256 operation over the whole DER-encoded
         certificate and is used to derive the SFDI and LFDI"""
         # Replace %xx escapes with their single-character equivalent
-        cert_pem = urllib.parse.unquote(cert_pem)
+        cert_pem_b64 = urllib.parse.unquote(cert_pem_b64)
 
         # remove header/footer
-        cert_pem = "\n".join(cert_pem.splitlines()[1:-1])
+        cert_pem_b64 = "\n".join(cert_pem_b64.splitlines()[1:-1])
 
         # decode base64
-        cert_pem = base64.b64decode(cert_pem)
+        cert_pem_bytes = base64.b64decode(cert_pem_b64)
 
         # sha256 hash
-        hashing_obj = hashlib.sha256(cert_pem)
+        hashing_obj = hashlib.sha256(cert_pem_bytes)
         return hashing_obj.hexdigest()

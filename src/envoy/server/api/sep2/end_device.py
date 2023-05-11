@@ -76,7 +76,7 @@ async def get_enddevice_list(
             extract_aggregator_id(request),
             start=extract_start_from_paging_param(start),
             after=extract_datetime_from_paging_param(after),
-            limit=extract_limit_from_paging_param(limit)
+            limit=extract_limit_from_paging_param(limit),
         )
     )
 
@@ -85,7 +85,7 @@ async def get_enddevice_list(
 async def create_end_device(
     request: Request,
     payload: EndDeviceRequest = Depends(XmlRequest(EndDeviceRequest)),
-) -> XmlResponse:
+) -> Response:
     """An EndDevice resource is generated with a unique reg_no (registration number).
     This reg_no is used to set the resource path i.e.'/edev/reg_no' which is
     sent to the client in the response 'Location' header.
@@ -102,7 +102,6 @@ async def create_end_device(
         site_id = await EndDeviceManager.add_or_update_enddevice_for_aggregator(
             db.session, extract_aggregator_id(request), payload
         )
-
         return Response(status_code=HTTPStatus.CREATED, headers={LOCATION_HEADER_NAME: f"/edev/{site_id}"})
     except BadRequestError as exc:
         logger.debug(exc)

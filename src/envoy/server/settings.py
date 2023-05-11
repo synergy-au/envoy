@@ -16,12 +16,12 @@ class AppSettings(BaseSettings):
     default_timezone: str = "Australia/Brisbane"
 
     database_url: PostgresDsn
-    commit_on_exit: str = False
+    commit_on_exit: bool = False
 
     class Config:
         validate_assignment = True
-        env_file: str = '.env'
-        env_file_encoding: str = 'utf-8'
+        env_file: str = ".env"
+        env_file_encoding: str = "utf-8"
 
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:
@@ -42,7 +42,10 @@ class AppSettings(BaseSettings):
 
 def generate_settings() -> AppSettings:
     """Generates and configures a new instance of the AppSettings"""
-    return AppSettings()
+
+    # Silenced complaints about database_url - keeping mypy happy here is tricky (for certain python versions).
+    # The "cost" of not having it set will be caught by our test coverage - this is an error we can ignore
+    return AppSettings()  # type: ignore  [call-arg]
 
 
 settings = generate_settings()

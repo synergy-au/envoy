@@ -1,6 +1,6 @@
 import logging
 from http import HTTPStatus
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import HTTPException, Request, Response
 
@@ -11,7 +11,7 @@ from envoy.server.schema.sep2.types import ReasonCodeType
 logger = logging.getLogger(__name__)
 
 
-def http_status_code_to_reason_code(status_code: HTTPStatus) -> ReasonCodeType:
+def http_status_code_to_reason_code(status_code: Union[HTTPStatus, int]) -> ReasonCodeType:
     if status_code == HTTPStatus.TOO_MANY_REQUESTS:
         return ReasonCodeType.resource_limit_reached
     elif status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
@@ -21,7 +21,7 @@ def http_status_code_to_reason_code(status_code: HTTPStatus) -> ReasonCodeType:
 
 
 def generate_error_response(
-    status_code: HTTPStatus, message: Optional[str] = None, max_retry_duration: Optional[int] = None
+    status_code: Union[HTTPStatus, int], message: Optional[str] = None, max_retry_duration: Optional[int] = None
 ) -> Response:
     """Generates an XML response loaded with a sep2 Error object"""
     reason_code = http_status_code_to_reason_code(status_code)

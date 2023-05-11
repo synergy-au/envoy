@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as psql_insert
@@ -12,12 +12,14 @@ async def select_aggregator_site_count(session: AsyncSession, aggregator_id: int
     """Fetches the number of sites 'owned' by the specified aggregator (with an additional filter on the site
     changed_time)
 
-    after: Only sites with a changed_time greater than this value will be counted.
-           Set to 'datetime.min' to count all sites.
-    """
-    stmt = select(func.count()).select_from(
-        select(Site.site_id).where((Site.aggregator_id == aggregator_id) & (Site.changed_time >= after))
+    after: Only sites with a changed_time greater than this value will be counted (set to 0 to count everything)"""
+    # fmt: off
+    stmt = (
+        select(func.count())
+        .select_from(Site)
+        .where((Site.aggregator_id == aggregator_id) & (Site.changed_time >= after))
     )
+    # fmt: on
     resp = await session.execute(stmt)
     return resp.scalar_one()
 
@@ -28,7 +30,7 @@ async def select_all_sites_with_aggregator_id(
     start: int,
     after: datetime,
     limit: int,
-) -> list[Site]:
+) -> Sequence[Site]:
     """Selects sites for an aggregator with some basic pagination / filtering based on change time
 
     Results will be ordered according to sep2 spec which is changedTime then sfdi"""
@@ -68,7 +70,7 @@ async def upsert_site_for_aggregator(session: AsyncSession, aggregator_id: int, 
         raise ValueError(f"Specified aggregator_id {aggregator_id} mismatches site.aggregator_id {site.aggregator_id}")
 
     table = Site.__table__
-    update_cols = [c.name for c in table.c if c not in list(table.primary_key.columns)]
+    update_cols = [c.name for c in table.c if c not in list(table.primary_key.columns)]  # type: ignore [attr-defined]
     stmt = psql_insert(Site).values(**{k: getattr(site, k) for k in update_cols})
     stmt = stmt.on_conflict_do_update(
         index_elements=[Site.aggregator_id, Site.sfdi],

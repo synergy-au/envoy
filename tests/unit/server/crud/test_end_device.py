@@ -158,7 +158,7 @@ async def test_select_single_site_with_site_id(pg_base_config):
 async def test_upsert_site_for_aggregator_insert(pg_base_config):
     """Tests that the upsert can do inserts"""
 
-    # Do the insert in a session seperate to the database
+    # Do the insert in a session separate to the database
     inserted_id: int
     new_site: Site = generate_class_instance(Site)
     del new_site.site_id  # Don't set the primary key - we expect the DB to set that

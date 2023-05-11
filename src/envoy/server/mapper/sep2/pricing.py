@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from enum import IntEnum, auto
 from itertools import islice, product
-from typing import Iterator
+from typing import Iterator, Sequence
 
 from envoy.server.crud.pricing import TariffGeneratedRateDailyStats
 from envoy.server.exception import InvalidMappingError
@@ -64,7 +64,7 @@ class TariffProfileMapper:
         return TariffProfileMapper._map_to_response(tariff, tp_href, 0)
 
     @staticmethod
-    def map_to_list_nosite_response(tariffs: list[Tariff], total_tariffs: int) -> TariffProfileListResponse:
+    def map_to_list_nosite_response(tariffs: Sequence[Tariff], total_tariffs: int) -> TariffProfileListResponse:
         """Returns a list containing multiple sep2 entities. The href to RateComponentListLink will be to an endpoint
         for returning rate components for an unspecified site id"""
         return TariffProfileListResponse.validate(
@@ -331,7 +331,7 @@ class TimeTariffIntervalMapper:
 
     @staticmethod
     def map_to_list_response(
-        rates: list[TariffGeneratedRate], pricing_reading: PricingReadingType, total: int
+        rates: Sequence[TariffGeneratedRate], pricing_reading: PricingReadingType, total: int
     ) -> TimeTariffIntervalListResponse:
         """Creates a TimeTariffIntervalListResponse for a single set of rates."""
         return TimeTariffIntervalListResponse.validate(
