@@ -24,6 +24,10 @@ class FunctionSet(Enum):
     Prepayment = auto()
     FlowReservation = auto()
     DistributedEnergyResources = auto()
+    # According to section 10.11 Metering Mirror is its own function set...
+    # but according to Annex A the Metering Mirror endpoints are part of the Metering function set.
+    # This list was created from Annex A so doesn't include MeteringMirror as it's own function set.
+    MeteringMirror = auto()
 
 
 # Should this be called FunctionSetSupportLevel instead?
@@ -51,6 +55,7 @@ FUNCTION_SET_STATUS = {
     FunctionSet.SoftwareDownload: FunctionSetStatus.UNSUPPORTED,
     FunctionSet.DemandResponseAndLoadControl: FunctionSetStatus.UNSUPPORTED,
     FunctionSet.Metering: FunctionSetStatus.UNSUPPORTED,
+    FunctionSet.MeteringMirror: FunctionSetStatus.SUPPORTED,
     FunctionSet.Pricing: FunctionSetStatus.UNSUPPORTED,
     FunctionSet.Messaging: FunctionSetStatus.UNSUPPORTED,
     FunctionSet.Billing: FunctionSetStatus.UNSUPPORTED,
