@@ -34,7 +34,7 @@ class LFDIAuthDepends:
                 detail="Missing certificate PEM header/fingerprint from gateway.",
             )
 
-        if cert_header_val.startswith("-----BEGIN CERTIFICATE-----"):
+        if cert_header_val.startswith("-----BEGIN"):
             lfdi = LFDIAuthDepends.generate_lfdi_from_pem(cert_header_val)
         else:
             lfdi = LFDIAuthDepends.generate_lfdi_from_fingerprint(cert_header_val)
