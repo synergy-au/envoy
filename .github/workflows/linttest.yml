@@ -77,6 +77,26 @@ jobs:
         run: |
           mypy src/
 
+  docker_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH Agent 
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          eval "$(ssh-agent -a $SSH_AUTH_SOCK > /dev/null)"
+          ssh-add - <<< '${{ secrets.ENVOY_SCHEMA_PRIVATE_KEY }}'
+
+      - name: Docker Build
+        uses: docker/build-push-action@v4
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        with:
+          push: false
+          file: Dockerfile.server
+          ssh: |
+            default=${{ env.SSH_AUTH_SOCK }}
+
   pytest_py310:
     runs-on: ubuntu-latest
     steps:
