@@ -2,6 +2,7 @@ import glob
 import os
 import random
 import sys
+from decimal import Decimal
 
 import alembic.config
 import pytest
@@ -10,6 +11,9 @@ from pytest_postgresql import factories
 
 from tests.postgres_testing import generate_async_conn_str_from_connection
 from tests.unit.jwt import DEFAULT_CLIENT_ID, DEFAULT_DATABASE_RESOURCE_ID, DEFAULT_ISSUER, DEFAULT_TENANT_ID
+
+DEFAULT_DOE_IMPORT_ACTIVE_WATTS = Decimal("8200")
+DEFAULT_DOE_EXPORT_ACTIVE_WATTS = Decimal("5400")
 
 # Redefine postgresql fixture if the environment variable, TEST_WITH_DOCKER is True
 # The postgresql fixture comes from the pytest-postgresql plugin. See https://pypi.org/project/pytest-postgresql/)
@@ -66,6 +70,14 @@ def pg_empty_config(postgresql, request: pytest.FixtureRequest) -> Connection:
     else:
         os.environ["HREF_PREFIX"] = ""
 
+    no_default_doe_marker = request.node.get_closest_marker("no_default_doe")
+    if no_default_doe_marker is not None:
+        os.environ["DEFAULT_DOE_IMPORT_ACTIVE_WATTS"] = ""
+        os.environ["DEFAULT_DOE_EXPORT_ACTIVE_WATTS"] = ""
+    else:
+        os.environ["DEFAULT_DOE_IMPORT_ACTIVE_WATTS"] = str(DEFAULT_DOE_IMPORT_ACTIVE_WATTS)
+        os.environ["DEFAULT_DOE_EXPORT_ACTIVE_WATTS"] = str(DEFAULT_DOE_EXPORT_ACTIVE_WATTS)
+
     # we want alembic to run from the server directory but to revert back afterwards
     cwd = os.getcwd()
     try:
@@ -114,6 +126,20 @@ def pg_la_timezone(pg_base_config) -> Connection:
     """Mutates pg_base_config to set all site timezones to Los Angeles time"""
 
     with open("tests/data/sql/la_timezone.sql") as f:
+        base_config_sql = f.read()
+
+    with pg_base_config.cursor() as cursor:
+        cursor.execute(base_config_sql)
+        pg_base_config.commit()
+
+    yield pg_base_config
+
+
+@pytest.fixture
+def pg_additional_does(pg_base_config) -> Connection:
+    """Mutates pg_base_config to include additional DOEs"""
+
+    with open("tests/data/sql/additional_does.sql") as f:
         base_config_sql = f.read()
 
     with pg_base_config.cursor() as cursor:
