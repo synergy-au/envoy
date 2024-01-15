@@ -1,11 +1,14 @@
 from typing import Any, Dict, Optional
 
-from pydantic import BaseSettings, PostgresDsn
+from pydantic import PostgresDsn
+from pydantic_settings import BaseSettings
 
 from envoy.server.settings import generate_middleware_kwargs
 
 
 class AppSettings(BaseSettings):
+    model_config = {"validate_assignment": True, "env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+
     debug: bool = False
     docs_url: str = "/docs"
     openapi_prefix: str = ""
@@ -29,11 +32,6 @@ class AppSettings(BaseSettings):
         14400  # How frequently (in seconds) will the Azure AD DB token be manually refreshed. Default 4 hours.
     )
 
-    class Config:
-        validate_assignment = True
-        env_file: str = ".env"
-        env_file_encoding: str = "utf-8"
-
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:
         return {
@@ -49,7 +47,7 @@ class AppSettings(BaseSettings):
     @property
     def db_middleware_kwargs(self) -> Dict[str, Any]:
         return generate_middleware_kwargs(
-            database_url=self.database_url,
+            database_url=str(self.database_url),
             commit_on_exit=self.commit_on_exit,
             azure_ad_db_resource_id=self.azure_ad_db_resource_id,
             azure_ad_db_refresh_secs=self.azure_ad_db_refresh_secs,

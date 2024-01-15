@@ -384,23 +384,25 @@ PRIMITIVE_VALUE_GENERATORS: dict[type, Callable[[int], Any]] = {
     datetime: lambda seed: datetime(2010, 1, 1, tzinfo=timezone.utc) + timedelta(days=seed) + timedelta(seconds=seed),
 }
 
-# the set of all generators (target: type, kwargs: dict[str, Any) -> class instance (keyed by the base type of the generated type))
+# the set of all generators (target: type, kwargs: dict[str, Any) -> class instance (keyed by the base type of
+# the generated type))
 CLASS_INSTANCE_GENERATORS: dict[type, Callable[[type, dict[str, Any]], Any]] = {
     Base: lambda target, kwargs: target(**kwargs),
-    BaseXmlModel: lambda target, kwargs: target.construct(**kwargs),
-    BaseModel: lambda target, kwargs: target.construct(**kwargs),
+    BaseXmlModel: lambda target, kwargs: target.model_construct(**kwargs),
+    BaseModel: lambda target, kwargs: target.model_construct(**kwargs),
     _PlaceholderDataclassBase: lambda target, kwargs: target(**kwargs),
 }
 
 # the set of functions for accessing all members of a class (keyed by the base class for accessing those members)
 CLASS_MEMBER_FETCHERS: dict[type, Callable[[type], list[str]]] = {
     Base: lambda target: [name for (name, _) in inspect.getmembers(target)],
-    BaseXmlModel: lambda target: list(target.schema()["properties"].keys()),
-    BaseModel: lambda target: list(target.schema()["properties"].keys()),
+    BaseXmlModel: lambda target: list(target.model_fields.keys()),
+    BaseModel: lambda target: list(target.model_fields.keys()),
     _PlaceholderDataclassBase: lambda target: [f.name for f in fields(target)],
 }
 
 # the set all base class public members keyed by the base class that generated them
 BASE_CLASS_PUBLIC_MEMBERS: dict[type, set[str]] = {}
 for base_class in CLASS_INSTANCE_GENERATORS.keys():
-    BASE_CLASS_PUBLIC_MEMBERS[base_class] = set([m for (m, _) in inspect.getmembers(base_class) if is_member_public(m)])
+    members = CLASS_MEMBER_FETCHERS[base_class](base_class)
+    BASE_CLASS_PUBLIC_MEMBERS[base_class] = set([m for m in members if is_member_public(m)])
