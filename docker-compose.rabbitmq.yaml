@@ -14,6 +14,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     hostname: rabbit-mq
+    restart: unless-stopped
     healthcheck:
       test: rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
       interval: 30s

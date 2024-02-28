@@ -5,7 +5,7 @@ from typing import Optional, Union
 from envoy_schema.server.schema.sep2.error import ErrorResponse
 from envoy_schema.server.schema.sep2.types import ReasonCodeType
 from fastapi import HTTPException, Request, Response
-from lxml.etree import XMLSyntaxError
+from lxml.etree import XMLSyntaxError  # type: ignore # nosec: This will need to be addressed with pydantic-xml
 from pydantic_core import ValidationError
 
 from envoy.server.api.response import XmlResponse

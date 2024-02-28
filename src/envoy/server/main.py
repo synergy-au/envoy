@@ -4,7 +4,7 @@ from decimal import Decimal
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi_async_sqlalchemy import SQLAlchemyMiddleware
-from lxml.etree import XMLSyntaxError
+from lxml.etree import XMLSyntaxError  # type: ignore # nosec: This will need to be addressed with pydantic-xml
 from pydantic_core import ValidationError
 
 from envoy.notification.handler import enable_notification_client
