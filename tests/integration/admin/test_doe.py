@@ -5,11 +5,11 @@ from envoy_schema.admin.schema.doe import DynamicOperatingEnvelopeRequest
 from envoy_schema.admin.schema.uri import DoeCreateUri
 from httpx import AsyncClient
 
-from tests.data.fake.generator import assert_class_instance_equality, generate_class_instance
+from tests.data.fake.generator import generate_class_instance
 
 
 @pytest.mark.anyio
-async def test_create_tariff_genrates(admin_client_auth: AsyncClient):
+async def test_create_does(admin_client_auth: AsyncClient):
     doe = generate_class_instance(DynamicOperatingEnvelopeRequest)
     doe.site_id = 1
 

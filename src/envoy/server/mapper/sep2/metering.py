@@ -19,14 +19,16 @@ from envoy_schema.server.schema.sep2.types import (
     ServiceKind,
 )
 
-from envoy.server.api.request import RequestStateParameters
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.common import generate_href, generate_mrid
 from envoy.server.model.site import Site
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
+from envoy.server.request_state import RequestStateParameters
 
 MIRROR_USAGE_POINT_MRID_PREFIX: int = int("f051", 16)
 MIRROR_METER_READING_MRID_PREFIX: int = int("4ead", 16)
+
+READING_SET_ALL_ID = "all"  # string key identifying a reading set that includes ALL readings for MeterReading
 
 
 class MirrorUsagePointMapper:
@@ -193,3 +195,19 @@ class MirrorMeterReadingMapper:
         if readings is None:
             return []
         return readings
+
+    @staticmethod
+    def map_to_response(site_reading: SiteReading) -> Reading:
+        """Takes a single site_reading and converts it to the equivalent sep2 Reading"""
+        local_id: Optional[str] = f"{site_reading.local_id:0x}" if site_reading.local_id is not None else None
+        return Reading.model_validate(
+            {
+                "localID": local_id,
+                "qualityFlags": f"{int(site_reading.quality_flags):0x}",  # hex encoded
+                "timePeriod": {
+                    "duration": site_reading.time_period_seconds,
+                    "start": int(site_reading.time_period_start.timestamp()),
+                },
+                "value": site_reading.value,
+            }
+        )
