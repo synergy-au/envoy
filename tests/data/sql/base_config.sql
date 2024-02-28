@@ -10,6 +10,13 @@ INSERT INTO public.aggregator("aggregator_id", "name") VALUES (3, 'Aggregator 3'
 
 SELECT pg_catalog.setval('public.aggregator_aggregator_id_seq', 4, true);
 
+INSERT INTO public.aggregator_domain("aggregator_domain_id", "aggregator_id", "changed_time", "domain") VALUES (1, 1, '2023-01-02 01:02:03.500', 'example.com');
+INSERT INTO public.aggregator_domain("aggregator_domain_id", "aggregator_id", "changed_time", "domain") VALUES (2, 2, '2023-01-02 02:02:03.500', 'example.com');
+INSERT INTO public.aggregator_domain("aggregator_domain_id", "aggregator_id", "changed_time", "domain") VALUES (3, 3, '2023-01-02 03:02:03.500', 'example.com');
+INSERT INTO public.aggregator_domain("aggregator_domain_id", "aggregator_id", "changed_time", "domain") VALUES (4, 1, '2023-01-02 04:02:03.500', 'another.example.com');
+
+SELECT pg_catalog.setval('public.aggregator_domain_aggregator_domain_id_seq', 5, true);
+
 -- See tests/data/certificates for how these were generated
 INSERT INTO public.certificate("certificate_id", "created", "lfdi", "expiry") VALUES (1, '2023-01-01 01:02:03.500', '854d10a201ca99e5e90d3c3e1f9bc1c3bd075f3b', '2037-01-01 01:02:03'); -- certificate 1
 INSERT INTO public.certificate("certificate_id", "created", "lfdi", "expiry") VALUES (2, '2023-01-01 02:03:04.500', '403ba02aa36fa072c47eb3299daaafe94399adad', '2037-01-01 02:03:04'); -- certificate 2
@@ -211,7 +218,7 @@ VALUES (5, -- subscription_id
     1, -- aggregator_id
     '2024-01-02 15:22:33.500', -- changed_time
     4, -- resource_type
-    NULL, -- resource_id
+    1, -- resource_id
     NULL, -- scoped_site_id
     'https://example.com:55/path/', -- notification_uri
     55 -- entity_limit

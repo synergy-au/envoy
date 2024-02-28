@@ -2,17 +2,22 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import pytest
+from envoy_schema.server.schema.sep2.pub_sub import ConditionAttributeIdentifier
+from sqlalchemy import select
 
 from envoy.server.crud.subscription import (
     count_subscriptions_for_aggregator,
     count_subscriptions_for_site,
+    delete_subscription_for_site,
+    insert_subscription,
     select_subscription_by_id,
     select_subscriptions_for_aggregator,
     select_subscriptions_for_site,
 )
-from envoy.server.model.subscription import Subscription, SubscriptionResource
+from envoy.server.model.subscription import Subscription, SubscriptionCondition, SubscriptionResource
 from tests.assert_time import assert_datetime_equal
 from tests.assert_type import assert_list_type
+from tests.data.fake.generator import assert_class_instance_equality, clone_class_instance
 from tests.postgres_testing import generate_async_session
 
 
@@ -67,7 +72,7 @@ async def test_select_subscription_by_id_content(pg_base_config):
         assert_datetime_equal(sub_5.changed_time, datetime(2024, 1, 2, 15, 22, 33, 500000, tzinfo=timezone.utc))
         assert sub_5.resource_type == SubscriptionResource.READING
         assert sub_5.scoped_site_id is None
-        assert sub_5.resource_id is None
+        assert sub_5.resource_id == 1
         assert sub_5.entity_limit == 55
         assert sub_5.notification_uri == "https://example.com:55/path/"
         assert len(sub_5.conditions) == 2
@@ -152,7 +157,7 @@ async def test_select_subscriptions_for_aggregator_content_only(pg_base_config):
         assert_datetime_equal(sub_5.changed_time, datetime(2024, 1, 2, 15, 22, 33, 500000, tzinfo=timezone.utc))
         assert sub_5.resource_type == SubscriptionResource.READING
         assert sub_5.scoped_site_id is None
-        assert sub_5.resource_id is None
+        assert sub_5.resource_id == 1
         assert sub_5.entity_limit == 55
         assert sub_5.notification_uri == "https://example.com:55/path/"
         assert len(sub_5.conditions) == 2
@@ -252,7 +257,7 @@ async def test_select_subscriptions_for_site_content_only(pg_base_config):
         assert_datetime_equal(sub_5.changed_time, datetime(2024, 1, 2, 15, 22, 33, 500000, tzinfo=timezone.utc))
         assert sub_5.resource_type == SubscriptionResource.READING
         assert sub_5.scoped_site_id == 4
-        assert sub_5.resource_id is None
+        assert sub_5.resource_id == 1
         assert sub_5.entity_limit == 55
         assert sub_5.notification_uri == "https://example.com:55/path/"
         assert len(sub_5.conditions) == 2
@@ -260,3 +265,132 @@ async def test_select_subscriptions_for_site_content_only(pg_base_config):
         assert sub_5.conditions[0].upper_threshold == 11
         assert sub_5.conditions[1].lower_threshold == 2
         assert sub_5.conditions[1].upper_threshold == 12
+
+
+@pytest.mark.anyio
+async def test_insert_subscription(pg_base_config):
+    """Checks that sub inserting works as expected"""
+    sub = Subscription(
+        aggregator_id=1,
+        changed_time=datetime.now(tz=timezone.utc),
+        resource_type=SubscriptionResource.SITE,
+        scoped_site_id=1,
+        resource_id=None,
+        notification_uri="http://test.insert/",
+        entity_limit=555,
+    )
+    async with generate_async_session(pg_base_config) as session:
+        # Clone so we dont end up with something tied to session
+        sub_id = await insert_subscription(
+            session, clone_class_instance(sub, ignored_properties=set(["aggregator", "conditions", "scoped_site"]))
+        )
+        assert sub_id > 0
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        new_sub = await select_subscription_by_id(session, 1, sub_id)
+        assert_class_instance_equality(Subscription, sub, new_sub, ignored_properties=set(["subscription_id"]))
+
+
+@pytest.mark.anyio
+async def test_insert_subscription_with_condition(pg_base_config):
+    """Checks that sub inserting works as expected"""
+    condition = SubscriptionCondition(
+        attribute=ConditionAttributeIdentifier.READING_VALUE, lower_threshold=22, upper_threshold=33
+    )
+    sub = Subscription(
+        aggregator_id=1,
+        changed_time=datetime.now(tz=timezone.utc),
+        resource_type=SubscriptionResource.SITE,
+        scoped_site_id=1,
+        resource_id=None,
+        notification_uri="http://test.insert/",
+        entity_limit=555,
+        conditions=[condition],
+    )
+
+    async with generate_async_session(pg_base_config) as session:
+        # Clone so we dont end up with something tied to session
+        cloned_sub: Subscription = clone_class_instance(
+            sub, ignored_properties=set(["aggregator", "conditions", "scoped_site"])
+        )
+        cloned_sub.conditions = [clone_class_instance(condition, ignored_properties=set(["subscription"]))]
+        sub_id = await insert_subscription(session, cloned_sub)
+        assert sub_id > 0
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        new_sub = await select_subscription_by_id(session, 1, sub_id)
+        assert_class_instance_equality(Subscription, sub, new_sub, ignored_properties=set(["subscription_id"]))
+        assert_class_instance_equality(
+            SubscriptionCondition,
+            condition,
+            new_sub.conditions[0],
+            ignored_properties=set(["subscription_condition_id", "subscription_id"]),
+        )
+
+
+@pytest.mark.anyio
+async def test_delete_subscription_for_site(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        assert await delete_subscription_for_site(session, 1, 4, 4)
+        assert not await delete_subscription_for_site(session, 1, 4, 5)  # not scoped to site_id 4
+        assert not await delete_subscription_for_site(session, 2, 2, 2)  # not scoped to agg 2
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        assert (
+            await select_subscription_by_id(
+                session,
+                1,
+                4,
+            )
+            is None
+        ), "Was deleted"
+        assert (
+            await select_subscription_by_id(
+                session,
+                1,
+                5,
+            )
+            is not None
+        )
+        assert (
+            await select_subscription_by_id(
+                session,
+                1,
+                2,
+            )
+            is not None
+        )
+
+
+@pytest.mark.anyio
+async def test_delete_subscription_for_site_with_conditions(pg_base_config):
+    # Start by updating our subscription 5 to appear under site 4 so we can delete it
+    async with generate_async_session(pg_base_config) as session:
+        sub_5 = await select_subscription_by_id(session, 1, 5)
+        sub_5.scoped_site_id = 4
+
+        resp = await session.execute(select(SubscriptionCondition))
+        assert len(resp.scalars().all()) == 2
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        assert await delete_subscription_for_site(session, 1, 4, 5)  # not scoped to site_id 4
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        assert (
+            await select_subscription_by_id(
+                session,
+                1,
+                5,
+            )
+            is None
+        ), "Was deleted"
+
+    # Validate conditions got cascade deleted
+    async with generate_async_session(pg_base_config) as session:
+        resp = await session.execute(select(SubscriptionCondition))
+        assert len(resp.scalars().all()) == 0
