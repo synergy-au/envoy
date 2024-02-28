@@ -127,3 +127,16 @@ async def test_connectionpoint_update_and_fetch_href_prefix(client: AsyncClient,
     assert len(body) > 0
     parsed_response: ConnectionPointResponse = ConnectionPointResponse.from_xml(body)
     assert parsed_response.id == new_cp_specified.id
+
+
+@pytest.mark.anyio
+async def test_connectionpoint_update_bad_xml(client: AsyncClient, connection_point_uri_format: str):
+    """Tests malformed XML on the endpoint results in a BadRequest"""
+
+    # The closing tag on ID has an incorrect namespace
+    bad_xml = """<ConnectionPoint xmlns="http://csipaus.org/ns"><id>1111111111</csipaus:id></ConnectionPoint>"""
+
+    href = connection_point_uri_format.format(site_id=1)
+    response = await client.post(url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=bad_xml)
+    assert_response_header(response, HTTPStatus.BAD_REQUEST)
+    assert_error_response(response)

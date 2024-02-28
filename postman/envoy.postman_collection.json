@@ -92,7 +92,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<ConnectionPoint xmlns=\"http://csipaus.org/ns\">\n    <id>1111111111</csipaus:id>\n</ConnectionPoint>\n",
+							"raw": "<ConnectionPoint xmlns=\"http://csipaus.org/ns\">\n    <id>1111111111</id>\n</ConnectionPoint>\n",
 							"options": {
 								"raw": {
 									"language": "xml"

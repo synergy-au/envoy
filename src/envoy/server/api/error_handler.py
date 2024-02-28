@@ -5,6 +5,7 @@ from typing import Optional, Union
 from envoy_schema.server.schema.sep2.error import ErrorResponse
 from envoy_schema.server.schema.sep2.types import ReasonCodeType
 from fastapi import HTTPException, Request, Response
+from lxml.etree import XMLSyntaxError
 from pydantic_core import ValidationError
 
 from envoy.server.api.response import XmlResponse
@@ -61,6 +62,20 @@ def validation_exception_handler(request: Request, exc: Union[ValidationError, E
 
     logger.exception(f"{request.path_params} generated validation exception {exc}")
     return generate_error_response(HTTPStatus.BAD_REQUEST, message=exc.json())
+
+
+def xml_exception_handler(request: Request, exc: Union[XMLSyntaxError, Exception]) -> Response:
+    """Handles fastapi XML validation exceptions that haven't been handled. These usually occur during
+    parsing of an incoming model to a Pydantic XML model and almost always indicate a bad request by the user.
+
+    It can technically arise if we stuff up the creation of a response model but test coverage should be catching
+    those cases so I think it's an acceptable 'risk' to just return the validation errors."""
+
+    if not hasattr(exc, "msg"):
+        return general_exception_handler(request, exc)
+
+    logger.exception(f"{request.path_params} generated validation exception {exc}")
+    return generate_error_response(HTTPStatus.BAD_REQUEST, message=exc.msg)
 
 
 def general_exception_handler(request: Request, exc: Exception) -> Response:
