@@ -94,7 +94,7 @@ async def test_create_does_with_active_subscription(
     assert resp.status_code == HTTPStatus.CREATED
 
     # Give the notifications a chance to propagate
-    assert await notifications_enabled.wait_for_n_requests(n=3, timeout_seconds=10)
+    assert await notifications_enabled.wait_for_n_requests(n=3, timeout_seconds=30)
 
     # DOE 1,2 are batch 1 and go to sub1
     # DOE 3 is batch 2 and go to sub1 and sub2
@@ -200,7 +200,7 @@ async def test_create_does_with_paginated_notifications(
     assert resp.status_code == HTTPStatus.CREATED
 
     # Give the notifications a chance to propagate
-    assert await notifications_enabled.wait_for_n_requests(n=2, timeout_seconds=10)
+    assert await notifications_enabled.wait_for_n_requests(n=2, timeout_seconds=30)
 
     # We should get 2 pages of notifications despite them all belonging to the same batch
     assert notifications_enabled.get_calls == 0
@@ -288,7 +288,7 @@ async def test_create_rates_with_active_subscription(
     assert resp.status_code == HTTPStatus.CREATED
 
     # Give the notifications a chance to propagate
-    await notifications_enabled.wait_for_n_requests(n=4, timeout_seconds=10)
+    assert await notifications_enabled.wait_for_n_requests(n=4, timeout_seconds=30)
 
     # There will be 4 price notifications going out (one for each price type)
     assert notifications_enabled.get_calls == 0

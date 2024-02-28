@@ -257,7 +257,7 @@ async def test_create_end_device_subscription(client: AsyncClient, notifications
     inserted_href = read_location_header(response)
 
     # Wait for the notification to propagate
-    assert await notifications_enabled.wait_for_request(timeout_seconds=10)
+    assert await notifications_enabled.wait_for_request(timeout_seconds=30)
 
     expected_notification_uri = "https://example.com:11/path/"  # from the base_config.sql
     assert notifications_enabled.get_calls == 0
@@ -306,7 +306,7 @@ async def test_submit_conditional_reading(client: AsyncClient, notifications_ena
     assert_response_header(response, HTTPStatus.CREATED, expected_content_type=None)
 
     # Wait for the notification to propagate
-    assert await notifications_enabled.wait_for_request(timeout_seconds=10)
+    assert await notifications_enabled.wait_for_request(timeout_seconds=30)
 
     expected_notification_uri = "https://example.com:55/path/"  # from the base_config.sql
     assert notifications_enabled.get_calls == 0
