@@ -14,7 +14,7 @@ from envoy_schema.server.schema.sep2.der import (
 )
 from envoy_schema.server.schema.sep2.identification import Link, ListLink
 from envoy_schema.server.schema.sep2.pricing import PrimacyType
-from envoy_schema.server.schema.sep2.types import DateTimeIntervalType
+from envoy_schema.server.schema.sep2.types import DateTimeIntervalType, SubscribableType
 
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.common import generate_href, generate_mrid
@@ -129,6 +129,7 @@ class DERControlMapper:
                 "href": href,
                 "all_": total_does,
                 "results": len(does),
+                "subscribable": SubscribableType.resource_supports_non_conditional_subscriptions,
                 "DERControl": [DERControlMapper.map_to_response(site) for site in does],
             }
         )

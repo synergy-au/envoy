@@ -24,6 +24,7 @@ from envoy_schema.server.schema.sep2.types import (
     PrimacyType,
     RoleFlagsType,
     ServiceKind,
+    SubscribableType,
     TOUType,
     UomType,
 )
@@ -247,6 +248,7 @@ class RateComponentMapper:
             {
                 "all_": daily_rate_stats.total_distinct_dates * TOTAL_PRICING_READING_TYPES,
                 "results": len(rc_list),
+                "subscribable": SubscribableType.resource_supports_non_conditional_subscriptions,
                 "RateComponent": rc_list,
             }
         )

@@ -4,7 +4,7 @@ from typing import Sequence
 import envoy_schema.server.schema.uri as uri
 from envoy_schema.server.schema.csip_aus.connection_point import ConnectionPointLink
 from envoy_schema.server.schema.sep2.end_device import EndDeviceListResponse, EndDeviceRequest, EndDeviceResponse
-from envoy_schema.server.schema.sep2.types import DEVICE_CATEGORY_ALL_SET, DeviceCategory
+from envoy_schema.server.schema.sep2.types import DEVICE_CATEGORY_ALL_SET, DeviceCategory, SubscribableType
 
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.common import generate_href
@@ -22,6 +22,7 @@ class EndDeviceMapper:
                 "href": edev_href,
                 "lFDI": site.lfdi,
                 "sFDI": site.sfdi,
+                "subscribable": SubscribableType.resource_supports_non_conditional_subscriptions,
                 "deviceCategory": f"{site.device_category:x}",  # deviceCategory is a hex string
                 "changedTime": int(site.changed_time.timestamp()),
                 "enabled": True,
@@ -63,6 +64,7 @@ class EndDeviceListMapper:
                 "href": generate_href(uri.EndDeviceListUri, rs_params),
                 "all_": site_count,
                 "results": len(site_list),
+                "subscribable": SubscribableType.resource_supports_non_conditional_subscriptions,
                 "EndDevice": [EndDeviceMapper.map_to_response(rs_params, site) for site in site_list],
             }
         )
