@@ -33,5 +33,5 @@ jobs:
           echo '${{ secrets.GITLAB_PAT }}' > ./gitlab.pat
           sudo service docker restart
           docker version -f '{{.Server.Experimental}}'
-          docker build -t ${{ secrets.AZURE_LOGIN_SERVER }}/pricing-engine:${{ steps.vars.outputs.tag }} -f Dockerfile.server --secret id=github_pat,src=github.pat . --no-cache
-          docker push ${{ secrets.AZURE_LOGIN_SERVER }}/pricing-engine:${{ steps.vars.outputs.tag }}
+          docker build -t ${{ secrets.AZURE_LOGIN_SERVER }}/envoy:${{ steps.vars.outputs.tag }} -f Dockerfile.server --secret id=github_pat,src=github.pat . --no-cache
+          docker push ${{ secrets.AZURE_LOGIN_SERVER }}/envoy:${{ steps.vars.outputs.tag }}

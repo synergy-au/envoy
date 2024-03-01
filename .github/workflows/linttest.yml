@@ -80,22 +80,14 @@ jobs:
   docker_build:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup SSH Agent 
-        env:
-          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+      - name: Build and push Docker image
         run: |
-          eval "$(ssh-agent -a $SSH_AUTH_SOCK > /dev/null)"
-          ssh-add - <<< '${{ secrets.ENVOY_SCHEMA_PRIVATE_KEY }}'
-
-      - name: Docker Build
-        uses: docker/build-push-action@v4
-        env:
-          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-        with:
-          push: false
-          file: Dockerfile.server
-          ssh: |
-            default=${{ env.SSH_AUTH_SOCK }}
+          echo $'{ "experimental": true, "features": { "buildkit" : true } }' | sudo tee /etc/docker/daemon.json
+          echo '${{ secrets.BSGIP_PAT }}' > ./github.pat
+          echo '${{ secrets.GITLAB_PAT }}' > ./gitlab.pat
+          sudo service docker restart
+          docker version -f '{{.Server.Experimental}}'
+          docker build -t envoy:test -f Dockerfile.server --secret id=github_pat,src=github.pat . --no-cache
 
   pytest_py310:
     runs-on: ubuntu-latest
