@@ -1,0 +1,37 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Create image and push to registry
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  create-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get the version
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/tags/}
+
+      - name: Checkout repo
+        uses: actions/checkout@v1
+
+      - name: Login to Azure Docker
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.AZURE_LOGIN_SERVER }}
+          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+
+      - name: Build and push Docker image
+        run: |
+          echo $'{ "experimental": true, "features": { "buildkit" : true } }' | sudo tee /etc/docker/daemon.json
+          echo '${{ secrets.BSGIP_PAT }}' > ./github.pat
+          echo '${{ secrets.GITLAB_PAT }}' > ./gitlab.pat
+          sudo service docker restart
+          docker version -f '{{.Server.Experimental}}'
+          docker build -t ${{ secrets.AZURE_LOGIN_SERVER }}/pricing-engine:${{ steps.vars.outputs.tag }} -f Dockerfile.server --secret id=github_pat,src=github.pat . --no-cache
+          docker push ${{ secrets.AZURE_LOGIN_SERVER }}/pricing-engine:${{ steps.vars.outputs.tag }}
