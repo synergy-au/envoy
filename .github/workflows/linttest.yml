@@ -80,6 +80,9 @@ jobs:
   docker_build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v1
+
       - name: Build and push Docker image
         run: |
           echo $'{ "experimental": true, "features": { "buildkit" : true } }' | sudo tee /etc/docker/daemon.json
