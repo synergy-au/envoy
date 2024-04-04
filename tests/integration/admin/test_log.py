@@ -53,22 +53,20 @@ async def test_get_calculation_log_by_id_missing(admin_client_auth: AsyncClient)
     assert resp.status_code == HTTPStatus.NOT_FOUND
 
 
+@pytest.mark.parametrize("interval_start_str", ["2024-01-31T01:02:03Z", "2024-01-31T01:02:03+00:00"])
 @pytest.mark.anyio
-async def test_get_calculation_log_by_interval(admin_client_auth: AsyncClient):
-    resp = await admin_client_auth.get(
-        CalculationLogForDateUri.format(calculation_interval_start="2024-01-31T01:02:03Z")
-    )
+async def test_get_calculation_log_by_interval(admin_client_auth: AsyncClient, interval_start_str: str):
+    resp = await admin_client_auth.get(CalculationLogForDateUri.format(calculation_interval_start=interval_start_str))
     assert resp.status_code == HTTPStatus.OK
 
     calc_log_2 = CalculationLogResponse.model_validate_json(resp.content)
     assert_calc_log_2(calc_log_2)
 
 
+@pytest.mark.parametrize("interval_start_str", ["2024-01-31T00:00:00Z", "2024-01-31T01:02:03+10:00"])
 @pytest.mark.anyio
-async def test_get_calculation_log_by_interval_missing(admin_client_auth: AsyncClient):
-    resp = await admin_client_auth.get(
-        CalculationLogForDateUri.format(calculation_interval_start="2024-01-31T00:00:00Z")
-    )
+async def test_get_calculation_log_by_interval_missing(admin_client_auth: AsyncClient, interval_start_str: str):
+    resp = await admin_client_auth.get(CalculationLogForDateUri.format(calculation_interval_start=interval_start_str))
     assert resp.status_code == HTTPStatus.NOT_FOUND
 
 
