@@ -37,7 +37,7 @@ async def get_all_aggregators(
 
 
 @router.get(AggregatorUri, status_code=HTTPStatus.OK, response_model=AggregatorResponse)
-async def get_group(
+async def get_aggregator(
     aggregator_id: int,
 ) -> AggregatorResponse:
     """Endpoint for requesting an Aggregator instance by its unique id,
