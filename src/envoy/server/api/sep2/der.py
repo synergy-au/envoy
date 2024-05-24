@@ -120,6 +120,8 @@ async def get_der_availability(request: Request, site_id: int, der_id: int) -> R
     return XmlResponse(result)
 
 
+# (temporary) see github issue: https://github.com/bsgip/envoy/issues/110
+@router.post(uri.DERAvailabilityUri, status_code=HTTPStatus.NO_CONTENT)
 @router.put(uri.DERAvailabilityUri, status_code=HTTPStatus.NO_CONTENT)
 async def put_der_availability(
     request: Request,
@@ -177,6 +179,8 @@ async def get_der_capability(request: Request, site_id: int, der_id: int) -> Res
     return XmlResponse(result)
 
 
+# (temporary) see github issue: https://github.com/bsgip/envoy/issues/110
+@router.post(uri.DERCapabilityUri, status_code=HTTPStatus.NO_CONTENT)
 @router.put(uri.DERCapabilityUri, status_code=HTTPStatus.NO_CONTENT)
 async def put_der_capability(
     request: Request,
@@ -234,6 +238,8 @@ async def get_der_status(request: Request, site_id: int, der_id: int) -> Respons
     return XmlResponse(result)
 
 
+# (temporary) see github issue: https://github.com/bsgip/envoy/issues/110
+@router.post(uri.DERStatusUri, status_code=HTTPStatus.NO_CONTENT)
 @router.put(uri.DERStatusUri, status_code=HTTPStatus.NO_CONTENT)
 async def put_der_status(
     request: Request,
@@ -291,6 +297,8 @@ async def get_der_settings(request: Request, site_id: int, der_id: int) -> Respo
     return XmlResponse(result)
 
 
+# (temporary) see github issue: https://github.com/bsgip/envoy/issues/110
+@router.post(uri.DERSettingsUri, status_code=HTTPStatus.NO_CONTENT)
 @router.put(uri.DERSettingsUri, status_code=HTTPStatus.NO_CONTENT)
 async def put_der_settings(
     request: Request,
