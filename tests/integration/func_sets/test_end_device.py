@@ -1,5 +1,5 @@
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 
 import pytest
@@ -7,8 +7,11 @@ from envoy_schema.server.schema.sep2.end_device import EndDeviceListResponse, En
 from envoy_schema.server.schema.sep2.types import DeviceCategory
 from httpx import AsyncClient
 
+from envoy.server.manager.time import utc_now
 from tests.assert_time import assert_nowish
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_FINGERPRINT as AGG_1_VALID_CERT
+from tests.data.certificates.certificate1 import TEST_CERTIFICATE_LFDI as AGG_1_LFDI_FROM_VALID_CERT
+from tests.data.certificates.certificate1 import TEST_CERTIFICATE_SFDI as AGG_1_SFDI_FROM_VALID_CERT
 from tests.data.certificates.certificate4 import TEST_CERTIFICATE_FINGERPRINT as AGG_2_VALID_CERT
 from tests.data.certificates.certificate5 import TEST_CERTIFICATE_FINGERPRINT as AGG_3_VALID_CERT
 from tests.data.fake.generator import generate_class_instance
@@ -36,7 +39,11 @@ def edev_fetch_uri_format():
 
 @pytest.mark.parametrize(
     "site_sfdis,cert",
-    [([4444, 2222, 1111], AGG_1_VALID_CERT), ([3333], AGG_2_VALID_CERT), ([], AGG_3_VALID_CERT)],
+    [
+        ([357827241281, 4444, 2222, 1111], AGG_1_VALID_CERT),
+        ([372641169614, 3333], AGG_2_VALID_CERT),
+        ([633600933412], AGG_3_VALID_CERT),
+    ],
 )
 @pytest.mark.anyio
 async def test_get_end_device_list_by_aggregator(
@@ -51,8 +58,11 @@ async def test_get_end_device_list_by_aggregator(
     body = read_response_body_string(response)
     assert len(body) > 0
     parsed_response: EndDeviceListResponse = EndDeviceListResponse.from_xml(body)
-    assert parsed_response.all_ == len(site_sfdis), f"received body:\n{body}"
+    assert parsed_response.all_ == len(site_sfdis), f"received body:\n{body}"  # -1 for virtual site
     assert parsed_response.results == len(site_sfdis), f"received body:\n{body}"
+
+    # According to Sep2: "results" will always be less than or equal to “all.”
+    assert parsed_response.results <= parsed_response.all_
 
     if len(site_sfdis) > 0:
         assert parsed_response.EndDevice, f"received body:\n{body}"
@@ -63,30 +73,35 @@ async def test_get_end_device_list_by_aggregator(
 @pytest.mark.parametrize(
     "query_string, site_sfdis, expected_total, cert",
     [
-        (build_paging_params(limit=1), [4444], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=2), [4444, 2222], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=2, start=1), [2222, 1111], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=1, start=1), [2222], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=1, start=2), [1111], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=1, start=3), [], 3, AGG_1_VALID_CERT),
-        (build_paging_params(limit=2, start=2), [1111], 3, AGG_1_VALID_CERT),
+        (build_paging_params(limit=1), [357827241281], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=2), [357827241281, 4444], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=2, start=1), [4444, 2222], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=1, start=1), [4444], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=1, start=2), [2222], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=1, start=4), [], 4, AGG_1_VALID_CERT),
+        (build_paging_params(limit=2, start=3), [1111], 4, AGG_1_VALID_CERT),
         # add in timestamp filtering
         # This will filter down to Site 2,3,4
         (
             build_paging_params(limit=5, changed_after=datetime(2022, 2, 3, 5, 0, 0, tzinfo=timezone.utc)),
-            [4444, 2222],
-            2,
+            [357827241281, 4444, 2222],
+            3,
             AGG_1_VALID_CERT,
         ),
         (
-            build_paging_params(limit=5, start=1, changed_after=datetime(2022, 2, 3, 5, 0, 0, tzinfo=timezone.utc)),
+            build_paging_params(limit=5, start=2, changed_after=datetime(2022, 2, 3, 5, 0, 0, tzinfo=timezone.utc)),
             [2222],
-            2,
+            3,
             AGG_1_VALID_CERT,
         ),
-        (build_paging_params(limit=2, start=1), [], 1, AGG_2_VALID_CERT),
-        (build_paging_params(limit=2, start=1), [], 0, AGG_3_VALID_CERT),
-        (build_paging_params(), [], 0, AGG_3_VALID_CERT),
+        (build_paging_params(limit=2, start=2), [], 2, AGG_2_VALID_CERT),
+        (build_paging_params(limit=2, start=1), [], 1, AGG_3_VALID_CERT),
+        (build_paging_params(), [633600933412], 1, AGG_3_VALID_CERT),
+        (build_paging_params(start=1), [], 1, AGG_3_VALID_CERT),
+        # Request sites changed only a short while ago
+        # Should only return the virtual site associated with the aggregator
+        (build_paging_params(changed_after=utc_now() - timedelta(minutes=1)), [357827241281], 1, AGG_1_VALID_CERT),
+        (build_paging_params(changed_after=utc_now() - timedelta(seconds=1)), [372641169614], 1, AGG_2_VALID_CERT),
     ],
 )
 @pytest.mark.anyio
@@ -101,6 +116,9 @@ async def test_get_end_device_list_pagination(
     parsed_response: EndDeviceListResponse = EndDeviceListResponse.from_xml(body)
     assert parsed_response.all_ == expected_total, f"received body:\n{body}"
     assert parsed_response.results == len(site_sfdis), f"received body:\n{body}"
+
+    # According to Sep2: "results" will always be less than or equal to “all.”
+    assert parsed_response.results <= parsed_response.all_
 
     if len(site_sfdis) > 0:
         assert parsed_response.EndDevice, f"received body:\n{body}"
@@ -138,6 +156,21 @@ async def test_get_enddevice(client: AsyncClient, edev_fetch_uri_format: str):
     response = await client.get(uri, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)})
     assert_response_header(response, HTTPStatus.NOT_FOUND)
     assert_error_response(response)
+
+    # Check fetching virtual end device for aggregator
+    # The virtual end device always has a site_id of 0
+    uri = edev_fetch_uri_format.format(site_id=0)
+    response = await client.get(uri, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)})
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+    parsed_response: EndDeviceResponse = EndDeviceResponse.from_xml(body)
+    assert_nowish(parsed_response.changedTime)
+    assert parsed_response.href == uri
+    assert parsed_response.enabled == 1
+    assert parsed_response.lFDI == AGG_1_LFDI_FROM_VALID_CERT
+    assert parsed_response.sFDI == int(AGG_1_SFDI_FROM_VALID_CERT)
+    assert parsed_response.deviceCategory == f"{DeviceCategory(0):x}"
 
 
 @pytest.mark.anyio
@@ -202,7 +235,7 @@ async def test_create_end_device_specified_sfdi(client: AsyncClient, edev_base_u
     body = read_response_body_string(response)
     assert len(body) > 0
     parsed_response: EndDeviceListResponse = EndDeviceListResponse.from_xml(body)
-    assert parsed_response.all_ == 4, f"received body:\n{body}"
+    assert parsed_response.all_ == 5, f"received body:\n{body}"
 
 
 @pytest.mark.anyio
@@ -322,7 +355,7 @@ async def test_update_end_device(client: AsyncClient, edev_base_uri: str):
     body = read_response_body_string(response)
     assert len(body) > 0
     parsed_response: EndDeviceListResponse = EndDeviceListResponse.from_xml(body)
-    assert parsed_response.all_ == 3, f"received body:\n{body}"
+    assert parsed_response.all_ == 4, f"received body:\n{body}"
 
 
 @pytest.mark.anyio

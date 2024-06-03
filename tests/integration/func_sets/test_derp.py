@@ -81,6 +81,7 @@ LOS_ANGELES_TZ = ZoneInfo("America/Los_Angeles")
         (3, None),  # Belongs to agg 2
         (4, 0),
         (5, None),  # DNE
+        (0, 4),  # Virtual aggregator device should return all for sites 1 and 2
     ],
 )
 async def test_get_derprogram_list(
@@ -267,6 +268,22 @@ async def get_derprogram_doe(
         (1, None, 0, None, AGG_1_VALID_CERT, 3, []),  # Zero limit
         (1, None, 99, datetime(2022, 5, 6, 14, 22, 34, tzinfo=timezone.utc), AGG_1_VALID_CERT, 0, []),  # changed_after
         (1, None, 99, None, AGG_2_VALID_CERT, 0, []),  # Wrong Aggregator
+        (
+            0,
+            None,
+            99,
+            None,
+            AGG_1_VALID_CERT,
+            4,
+            [
+                (datetime(2022, 5, 7, 1, 2, tzinfo=BRISBANE_TZ), 311, -322),
+                (datetime(2022, 5, 7, 1, 2, tzinfo=BRISBANE_TZ), 111, -122),
+                (datetime(2022, 5, 7, 3, 4, tzinfo=BRISBANE_TZ), 211, -222),
+                (datetime(2022, 5, 8, 1, 2, tzinfo=BRISBANE_TZ), 411, -422),
+            ],
+        ),  # DERControls for aggregator retrieves all site DERControls for aggregator
+        # Note: The order of the does is not guaranteed (duplicate datetime for sites, so this is
+        # dependent on order of insertion and currently fragile)
     ],
 )
 async def test_get_dercontrol_list(
@@ -527,6 +544,54 @@ async def test_get_active_doe(client: AsyncClient, pg_base_config, uri_derc_acti
 
     parsed_response.DERControl[0].DERControlBase_.opModImpLimW.value == 211
     parsed_response.DERControl[0].DERControlBase_.opModExpLimW.value == 212
+
+    # Now let the DOE expire
+    await asyncio.sleep(3)
+
+    # Now fire the query again - the doe should no longer be active
+    response = await client.get(path, headers=agg_1_headers)
+
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    parsed_response: DERControlListResponse = DERControlListResponse.from_xml(body)
+    assert parsed_response.href == path, "The active doe href should be included in the response"
+    assert parsed_response.all_ == 0
+    assert parsed_response.DERControl is None or len(parsed_response.DERControl) == 0
+
+
+@pytest.mark.anyio
+async def test_get_active_doe_for_aggregator(
+    client: AsyncClient, pg_base_config, uri_derc_active_control_list_format, agg_1_headers
+):
+    """Tests getting the active DOEs for an aggregator returns an empty list.
+    Note: this test is basically a straight copy/paste from the previous test,
+    but tests that even with an active DOE for a site under the aggregator,
+    that no DOE is returned. Whether this is the correct behaviour is undefined,
+    but arguably is more consistent than returning a 404."""
+
+    # update the DB to move start time to overlap with now
+    # Make it overlap for 3 seconds
+    async with generate_async_session(pg_base_config) as session:
+        stmt = select(DynamicOperatingEnvelope).where(DynamicOperatingEnvelope.dynamic_operating_envelope_id == 2)
+        resp = await session.execute(stmt)
+        doe_to_edit: DynamicOperatingEnvelope = resp.scalars().one()
+        doe_to_edit.duration_seconds = 3
+        doe_to_edit.start_time = datetime.now(tz=timezone.utc)
+        await session.commit()
+
+    path = uri_derc_active_control_list_format.format(site_id=0, der_program_id="doe")
+    response = await client.get(path, headers=agg_1_headers)
+
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    parsed_response: DERControlListResponse = DERControlListResponse.from_xml(body)
+    assert parsed_response.href == path, "The active doe href should be included in the response"
+    assert parsed_response.all_ == 0
+    assert parsed_response.DERControl is None or len(parsed_response.DERControl) == 0
 
     # Now let the DOE expire
     await asyncio.sleep(3)

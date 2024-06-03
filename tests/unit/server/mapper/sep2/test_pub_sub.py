@@ -30,6 +30,7 @@ from envoy_schema.server.schema.uri import (
     EndDeviceListUri,
 )
 
+from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.common import generate_href
 from envoy.server.mapper.csip_aus.doe import DOE_PROGRAM_ID
@@ -57,13 +58,60 @@ def test_SubscriptionMapper_calculate_resource_href_at_least_one_supported_combo
         sub.resource_id = resource_id
 
         try:
-            href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None))
+            href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
             assert href and isinstance(href, str)
             hrefs.append(href)
         except InvalidMappingError:
             pass
 
     assert len(hrefs) > 0, f"Expected at least one combo of site/resource ID to generate a validate href for {resource}"
+
+
+@pytest.mark.parametrize("resource", list(SubscriptionResource))
+def test_SubscriptionMapper_calculate_resource_href_all_support_site_unscoped(resource: SubscriptionResource):
+    """Validates the various SubscriptionResource values should have at least 1 supported combo of unscoped site and
+    either a specified resource id or none"""
+
+    hrefs: list[str] = []
+    for resource_id in [1, None]:
+        sub: Subscription = generate_class_instance(Subscription)
+        sub.resource_type = resource
+        sub.scoped_site_id = None
+        sub.resource_id = resource_id
+
+        try:
+            href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
+            assert href and isinstance(href, str)
+            hrefs.append(href)
+        except InvalidMappingError:
+            pass
+
+    assert (
+        len(hrefs) > 0
+    ), f"Expected at least one combo of unscoped site/resource ID to generate a validate href for {resource}"
+
+
+@pytest.mark.parametrize(
+    "site_id, resource", product([999, None], [r for r in list(SubscriptionResource) if r != SubscriptionResource.SITE])
+)
+def test_SubscriptionMapper_calculate_resource_href_encodes_site_id(
+    site_id: Optional[int], resource: SubscriptionResource
+):
+    sub: Subscription = generate_class_instance(Subscription)
+    sub.resource_type = resource
+    sub.scoped_site_id = site_id
+    sub.resource_id = None
+
+    try:
+        href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
+    except InvalidMappingError:
+        sub.resource_id = 888
+        href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
+
+    if site_id is None:
+        assert f"/{VIRTUAL_END_DEVICE_SITE_ID}" in href, "Expected virtual device id in place of None site_id"
+    else:
+        assert f"/{site_id}" in href, "Expected site id in href"
 
 
 @pytest.mark.parametrize("resource, site_id, resource_id", product(SubscriptionResource, [1, None], [2, None]))
@@ -79,7 +127,7 @@ def test_SubscriptionMapper_calculate_resource_href_uses_prefix(
     # set output to None if we hit an unsupported combo of inputs
     href_no_prefix: Optional[str]
     try:
-        href_no_prefix = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None))
+        href_no_prefix = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
         assert href_no_prefix
     except InvalidMappingError:
         href_no_prefix = None
@@ -88,7 +136,7 @@ def test_SubscriptionMapper_calculate_resource_href_uses_prefix(
     prefix = "/my/prefix/for/tests"
     href_with_prefix: Optional[str]
     try:
-        href_with_prefix = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, prefix))
+        href_with_prefix = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, prefix))
         assert href_with_prefix
     except InvalidMappingError:
         href_with_prefix = None
@@ -101,14 +149,14 @@ def test_SubscriptionMapper_calculate_resource_href_uses_prefix(
         # The hrefs should be identical (sans prefix)
         assert href_with_prefix.startswith(prefix)
         assert not href_no_prefix.startswith(prefix)
-        assert href_with_prefix == generate_href(href_no_prefix, RequestStateParameters(99, prefix))
+        assert href_with_prefix == generate_href(href_no_prefix, RequestStateParameters(99, None, prefix))
 
 
 def test_SubscriptionMapper_calculate_resource_href_bad_type():
     sub: Subscription = generate_class_instance(Subscription)
     sub.resource_type = 9876  # invalid type
     with pytest.raises(InvalidMappingError):
-        SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None))
+        SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
 
 
 def test_SubscriptionMapper_calculate_resource_href_unique_hrefs():
@@ -131,7 +179,7 @@ def test_SubscriptionMapper_calculate_resource_href_unique_hrefs():
         sub.resource_id = resource_id
 
         try:
-            href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None))
+            href = SubscriptionMapper.calculate_resource_href(sub, RequestStateParameters(99, None, None))
         except InvalidMappingError:
             total_fails = total_fails + 1
             continue
@@ -184,8 +232,8 @@ def test_SubscriptionMapper_map_to_response():
     sub_with_condition.notification_uri = "http://my.example:33/foo"
     sub_with_condition.resource_type = SubscriptionResource.SITE
 
-    rs_params_base = RequestStateParameters(aggregator_id=1, href_prefix=None)
-    rs_params_prefix = RequestStateParameters(aggregator_id=1, href_prefix="/my/prefix")
+    rs_params_base = RequestStateParameters(aggregator_id=1, aggregator_lfdi=None, href_prefix=None)
+    rs_params_prefix = RequestStateParameters(aggregator_id=1, aggregator_lfdi=None, href_prefix="/my/prefix")
 
     # check prefix is applied
     sep2_prefix = SubscriptionMapper.map_to_response(sub_all_set, rs_params_prefix)
@@ -233,7 +281,7 @@ def test_SubscriptionListMapper_map_to_site_response():
     sub_list[1].scoped_site_id = 1
     sub_count = 43
     site_id = 876
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
 
     mapped = SubscriptionListMapper.map_to_site_response(rs_params, site_id, sub_list, sub_count)
 
@@ -251,8 +299,8 @@ def test_SubscriptionMapper_calculate_subscription_href():
     sub_all_set = generate_class_instance(Subscription, seed=101, optional_is_none=False)
     sub_optional = generate_class_instance(Subscription, seed=101, optional_is_none=True)
 
-    rs_params_base = RequestStateParameters(aggregator_id=1, href_prefix=None)
-    rs_params_prefix = RequestStateParameters(aggregator_id=1, href_prefix="/my/prefix")
+    rs_params_base = RequestStateParameters(aggregator_id=1, aggregator_lfdi=None, href_prefix=None)
+    rs_params_prefix = RequestStateParameters(aggregator_id=1, aggregator_lfdi=None, href_prefix="/my/prefix")
 
     # Subscriptions scoped to a EndDevice are different to those that are "global"
     assert SubscriptionMapper.calculate_subscription_href(
@@ -286,7 +334,7 @@ def test_SubscriptionMapper_map_from_request():
     sub_condition.condition = generate_class_instance(Sep2Condition)
     sub_condition.condition.attributeIdentifier = ConditionAttributeIdentifier.READING_VALUE
 
-    rs_params_prefix = RequestStateParameters(aggregator_id=1, href_prefix="/prefix")
+    rs_params_prefix = RequestStateParameters(aggregator_id=1, aggregator_lfdi=None, href_prefix="/prefix")
     valid_domains = set(["foo.bar", "example.com"])
     changed_time = datetime(2022, 3, 4, 5, 6, 7)
 
@@ -320,25 +368,36 @@ def test_SubscriptionMapper_map_from_request():
     [
         ("/edev", (SubscriptionResource.SITE, None, None)),
         ("/edev/123", (SubscriptionResource.SITE, 123, None)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}", (SubscriptionResource.SITE, None, None)),
         ("/edev/123-a", InvalidMappingError),
         ("/edev/", InvalidMappingError),
         ("/upt/11/mr/22/rs/all/r", (SubscriptionResource.READING, 11, 22)),
+        (f"/upt/{VIRTUAL_END_DEVICE_SITE_ID}/mr/22/rs/all/r", (SubscriptionResource.READING, None, 22)),
         ("/upt/11/mr/22/rs/all/", InvalidMappingError),
         ("/upt/11/mr/22/rs/allbutnot/r", InvalidMappingError),
         ("/upt/11/mr/22-2/rs/all/r", InvalidMappingError),
         ("/upt/11-2/mr/22/rs/all/r", InvalidMappingError),
         ("/edev/33/tp/44/rc", (SubscriptionResource.TARIFF_GENERATED_RATE, 33, 44)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/tp/44/rc", (SubscriptionResource.TARIFF_GENERATED_RATE, None, 44)),
         ("/edev/33nan/tp/44/rc", InvalidMappingError),
         ("/edev/33/tp/44-4/rc", InvalidMappingError),
         ("/edev/55/derp/doe/derc", (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, 55, None)),
+        (
+            f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/derp/doe/derc",
+            (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, None, None),
+        ),
         ("/edev/55/derp/doe_but_not/derc", InvalidMappingError),
         ("/edev/55-3/derp/doe/derc", InvalidMappingError),
         ("/edev/55/derp/doe", InvalidMappingError),
         ("/edev/55/der/1/dera", (SubscriptionResource.SITE_DER_AVAILABILITY, 55, 1)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/der/1/dera", (SubscriptionResource.SITE_DER_AVAILABILITY, None, 1)),
         ("/edev/55/der/1/dera/other", InvalidMappingError),
         ("/edev/55/der/1/derg", (SubscriptionResource.SITE_DER_SETTING, 55, 1)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/der/1/derg", (SubscriptionResource.SITE_DER_SETTING, None, 1)),
         ("/edev/55/der/1/dercap", (SubscriptionResource.SITE_DER_RATING, 55, 1)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/der/1/dercap", (SubscriptionResource.SITE_DER_RATING, None, 1)),
         ("/edev/55/der/1/ders", (SubscriptionResource.SITE_DER_STATUS, 55, 1)),
+        (f"/edev/{VIRTUAL_END_DEVICE_SITE_ID}/der/1/ders", (SubscriptionResource.SITE_DER_STATUS, None, 1)),
         ("/edev/55/der/1/derx", InvalidMappingError),
         ("/", InvalidMappingError),
         ("edev", InvalidMappingError),
@@ -359,7 +418,7 @@ def test_NotificationMapper_map_sites_to_response():
     site2 = generate_class_instance(Site, seed=202, optional_is_none=True)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
 
     notification = NotificationMapper.map_sites_to_response([site1, site2], sub, rs_params)
     assert isinstance(notification, Notification)
@@ -378,7 +437,7 @@ def test_NotificationMapper_map_does_to_response():
     doe2 = generate_class_instance(DynamicOperatingEnvelope, seed=202, optional_is_none=True)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
 
     notification = NotificationMapper.map_does_to_response(site_id, [doe1, doe2], sub, rs_params)
@@ -398,7 +457,7 @@ def test_NotificationMapper_map_readings_to_response():
     sr2 = generate_class_instance(SiteReading, seed=202, optional_is_none=True)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     site_reading_type_id = 456
 
@@ -423,7 +482,7 @@ def test_NotificationMapper_map_rates_to_response():
     rate2 = generate_class_instance(TariffGeneratedRate, seed=202, optional_is_none=True)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 999
     tariff_id = 888
     day = datetime.now().date()
@@ -449,7 +508,7 @@ def test_NotificationMapper_map_rates_to_response():
 def test_NotificationMapper_map_der_availability_to_response_missing():
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -467,7 +526,7 @@ def test_NotificationMapper_map_der_availability_to_response():
     all_set: SiteDERAvailability = generate_class_instance(SiteDERAvailability, seed=1, optional_is_none=False)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -488,7 +547,7 @@ def test_NotificationMapper_map_der_availability_to_response():
 
 def test_NotificationMapper_map_der_rating_to_response_missing():
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -506,7 +565,7 @@ def test_NotificationMapper_map_der_rating_to_response():
     all_set: SiteDERRating = generate_class_instance(SiteDERRating, seed=1, optional_is_none=False)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -527,7 +586,7 @@ def test_NotificationMapper_map_der_rating_to_response():
 
 def test_NotificationMapper_map_der_settings_to_response_missing():
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -545,7 +604,7 @@ def test_NotificationMapper_map_der_settings_to_response():
     all_set: SiteDERSetting = generate_class_instance(SiteDERSetting, seed=1, optional_is_none=False)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -567,7 +626,7 @@ def test_NotificationMapper_map_der_settings_to_response():
 
 def test_NotificationMapper_map_der_status_to_response_missing():
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 
@@ -584,7 +643,7 @@ def test_NotificationMapper_map_der_status_to_response():
     all_set: SiteDERStatus = generate_class_instance(SiteDERStatus, seed=1, optional_is_none=False)
 
     sub = generate_class_instance(Subscription, seed=303)
-    rs_params = RequestStateParameters(1, "/custom/prefix")
+    rs_params = RequestStateParameters(1, None, "/custom/prefix")
     site_id = 123
     der_id = 456
 

@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.notification.manager.notification import NotificationManager
 from envoy.server.crud.end_device import (
+    VIRTUAL_END_DEVICE_SITE_ID,
+    get_virtual_site_for_aggregator,
     select_aggregator_site_count,
     select_all_sites_with_aggregator_id,
     select_single_site_with_sfdi,
@@ -18,7 +20,7 @@ from envoy.server.crud.end_device import (
 from envoy.server.exception import UnableToGenerateIdError
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.connection_point import ConnectionPointMapper
-from envoy.server.mapper.sep2.end_device import EndDeviceListMapper, EndDeviceMapper
+from envoy.server.mapper.sep2.end_device import EndDeviceListMapper, EndDeviceMapper, VirtualEndDeviceMapper
 from envoy.server.model.subscription import SubscriptionResource
 from envoy.server.request_state import RequestStateParameters
 
@@ -30,12 +32,23 @@ class EndDeviceManager:
     async def fetch_enddevice_with_site_id(
         session: AsyncSession, site_id: int, request_params: RequestStateParameters
     ) -> Optional[EndDeviceResponse]:
-        site = await select_single_site_with_site_id(
-            session=session, site_id=site_id, aggregator_id=request_params.aggregator_id
-        )
-        if site is None:
-            return None
-        return EndDeviceMapper.map_to_response(request_params, site)
+        # site_id of 0 refers to a virtual end-device (associated with the aggregator)
+        if site_id == VIRTUAL_END_DEVICE_SITE_ID:
+            site = await get_virtual_site_for_aggregator(
+                session=session,
+                aggregator_id=request_params.aggregator_id,
+                aggregator_lfdi=request_params.aggregator_lfdi,
+            )
+            if site is None:
+                return None
+            return VirtualEndDeviceMapper.map_to_response(request_params, site)
+        else:
+            site = await select_single_site_with_site_id(
+                session=session, site_id=site_id, aggregator_id=request_params.aggregator_id
+            )
+            if site is None:
+                return None
+            return EndDeviceMapper.map_to_response(request_params, site)
 
     @staticmethod
     async def generate_unique_device_id(session: AsyncSession, aggregator_id: int) -> tuple[int, str]:
@@ -134,8 +147,38 @@ class EndDeviceListManager:
         after: datetime,
         limit: int,
     ) -> EndDeviceListResponse:
+        """
+
+        start = 0 return [virtual_site, site_1, site_2, site_3, ...]
+        start = 1 return [site_1, site_2, site_3, ...]
+        start = 2 return [site_2, site_3, ...]
+        """
+
+        # Include the virtual site?
+        if start == 0:
+            # Get the virtual site associated with the aggregator
+            virtual_site = await get_virtual_site_for_aggregator(
+                session=session,
+                aggregator_id=request_params.aggregator_id,
+                aggregator_lfdi=request_params.aggregator_lfdi,
+            )
+
+            # Adjust limit to account for the virtual site
+            limit -= 1
+        else:
+            virtual_site = None
+
+        # Ensure a start value of either 0 or 1 will return the first site for the aggregator
+        start = max(0, start - 1)
+
         site_list = await select_all_sites_with_aggregator_id(
             session, request_params.aggregator_id, start, after, limit
         )
         site_count = await select_aggregator_site_count(session, request_params.aggregator_id, after)
-        return EndDeviceListMapper.map_to_response(request_params, site_list, site_count)
+
+        # site_count should include the virtual site
+        site_count += 1
+
+        return EndDeviceListMapper.map_to_response(
+            rs_params=request_params, site_list=site_list, site_count=site_count, virtual_site=virtual_site
+        )

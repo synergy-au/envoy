@@ -16,9 +16,11 @@ from envoy_schema.server.schema.uri import EndDeviceListUri
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.crud.subscription import select_subscription_by_id
 from envoy.server.manager.der_constants import PUBLIC_SITE_DER_ID
 from envoy.server.model.subscription import Subscription
+from tests.assert_time import assert_nowish
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_FINGERPRINT as AGG_1_VALID_CERT
 from tests.data.certificates.certificate4 import TEST_CERTIFICATE_FINGERPRINT as AGG_2_VALID_CERT
 from tests.data.certificates.certificate5 import TEST_CERTIFICATE_FINGERPRINT as AGG_3_VALID_CERT
@@ -45,12 +47,33 @@ def sub_uri_format():
     return "/edev/{site_id}/sub/{subscription_id}"
 
 
+def subscribable_resource_hrefs(site_id: int, pricing_reading_type_id: int) -> list[str]:
+    """Very coarse list of resource endpoints that can be subscribed (keyed for a particular site_id)"""
+    return [
+        f"/edev/{site_id}/derp/doe/derc",
+        f"/edev/{site_id}",
+        f"/edev/{site_id}/der/1/dercap",
+        f"/edev/{site_id}/der/1/dera",
+        f"/edev/{site_id}/der/1/ders",
+        f"/edev/{site_id}/der/1/derg",
+        f"/edev/{site_id}/tp/1/rc",
+        f"/upt/{site_id}/mr/{pricing_reading_type_id}/rs/all/r",
+    ]
+
+
 @pytest.mark.parametrize(
     "cert, site_id, expected_sub_ids",
     [
         (AGG_1_VALID_CERT, 4, [4, 5]),
         (AGG_2_VALID_CERT, 3, [3]),
+        (
+            AGG_1_VALID_CERT,
+            0,
+            [1, 2, 4, 5],
+        ),  # aggregator end device should get all subs across all sites (for this agg)
+        (AGG_2_VALID_CERT, 0, [3]),  # aggregator end device should get all subs across all sites (for this agg)
         (AGG_3_VALID_CERT, 4, []),  # Inaccessible to this aggregator
+        (AGG_3_VALID_CERT, 0, []),  # Agg3 has 0 subscriptions across all sites
         (AGG_1_VALID_CERT, 1, []),  # Nothing under site
         (AGG_1_VALID_CERT, 99, []),  # site DNE
     ],
@@ -208,16 +231,21 @@ async def test_delete_subscription(
         assert (initial_count - 1) == after_count
 
 
+@pytest.mark.parametrize("use_aggregator_edev", [True, False])
 @pytest.mark.anyio
-async def test_create_subscription(client: AsyncClient, sub_list_uri_format: str):
+async def test_create_doe_subscription(
+    pg_base_config, client: AsyncClient, sub_list_uri_format: str, use_aggregator_edev: bool
+):
     """When creating a sub check to see if it persists and is correctly assigned to the aggregator"""
+
+    edev_id: int = 0 if use_aggregator_edev else 1
 
     insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
     insert_request.encoding = SubscriptionEncoding.XML
     insert_request.notificationURI = "https://example.com/456?foo=bar"
-    insert_request.subscribedResource = "/edev/1/derp/doe/derc"
+    insert_request.subscribedResource = f"/edev/{edev_id}/derp/doe/derc"
     response = await client.post(
-        sub_list_uri_format.format(site_id=1),
+        sub_list_uri_format.format(site_id=edev_id),
         headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
         content=Sep2Subscription.to_xml(insert_request),
     )
@@ -231,7 +259,7 @@ async def test_create_subscription(client: AsyncClient, sub_list_uri_format: str
     response_body = read_response_body_string(response)
     assert len(response_body) > 0
     parsed_response: Sep2Subscription = Sep2Subscription.from_xml(response_body)
-    assert parsed_response.href == inserted_href
+    assert parsed_response.href in inserted_href
     assert parsed_response.notificationURI == insert_request.notificationURI
     assert parsed_response.subscribedResource == insert_request.subscribedResource
     assert parsed_response.limit == insert_request.limit
@@ -240,6 +268,137 @@ async def test_create_subscription(client: AsyncClient, sub_list_uri_format: str
     response = await client.get(inserted_href, headers={cert_header: urllib.parse.quote(AGG_2_VALID_CERT)})
     assert_response_header(response, HTTPStatus.NOT_FOUND)
     assert_error_response(response)
+
+    # Validate the DB record is properly scoped
+    async with generate_async_session(pg_base_config) as session:
+        resp = await session.execute(select(Subscription).order_by(Subscription.subscription_id.desc()).limit(1))
+        created_sub = resp.scalars().first()
+        if use_aggregator_edev:
+            assert created_sub.scoped_site_id is None, "Aggregator scoped requests are site unscoped"
+        else:
+            assert created_sub.scoped_site_id == edev_id, "Regular requests are site scoped"
+
+
+@pytest.mark.parametrize(
+    "invalid_resource",
+    subscribable_resource_hrefs(site_id=3, pricing_reading_type_id=2),  # Site 3 belongs to agg 2
+)
+@pytest.mark.anyio
+async def test_create_subscription_site_id_outside_aggregator(
+    client: AsyncClient, sub_list_uri_format: str, invalid_resource: str
+):
+    """When creating a sub check that the edev belongs to the requesting aggregator"""
+
+    # Test for both the aggregator end device AND the regular end device
+    for edev_id in [VIRTUAL_END_DEVICE_SITE_ID, 1]:
+        insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
+        insert_request.encoding = SubscriptionEncoding.XML
+        insert_request.notificationURI = "https://example.com/456?foo=bar"
+        insert_request.subscribedResource = invalid_resource
+        response = await client.post(
+            sub_list_uri_format.format(site_id=edev_id),
+            headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
+            content=Sep2Subscription.to_xml(insert_request),
+        )
+        assert_response_header(response, HTTPStatus.BAD_REQUEST)
+        assert_error_response(response)
+
+
+@pytest.mark.parametrize("sub_href", subscribable_resource_hrefs(site_id=1, pricing_reading_type_id=1))
+@pytest.mark.anyio
+async def test_create_site_scoped_subscription_entry_added_to_db(
+    pg_base_config, client: AsyncClient, sub_list_uri_format: str, sub_href: str
+):
+    """Simple test that subscription creation works across endpoints from subscribable_resource_hrefs
+    (when the subscription is going to be scoped to a single site)"""
+    edev_id = 1
+
+    insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
+    insert_request.encoding = SubscriptionEncoding.XML
+    insert_request.notificationURI = "https://example.com/456?foo=bar"
+    insert_request.subscribedResource = sub_href
+    response = await client.post(
+        sub_list_uri_format.format(site_id=edev_id),
+        headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
+        content=Sep2Subscription.to_xml(insert_request),
+    )
+    assert_response_header(response, HTTPStatus.CREATED, expected_content_type=None)
+    location_header = read_location_header(response)
+    assert location_header
+    sub_id = int(location_header.split("/")[-1])  # the last part of the href should be a subscription id
+
+    # Validate the DB record is properly scoped
+    async with generate_async_session(pg_base_config) as session:
+        resp = await session.execute(select(Subscription).where(Subscription.subscription_id == sub_id).limit(1))
+        created_sub = resp.scalars().first()
+        assert created_sub.scoped_site_id == edev_id, "Expected a site scoped sub"
+        assert_nowish(created_sub.changed_time)
+
+
+@pytest.mark.parametrize(
+    "sub_href", subscribable_resource_hrefs(site_id=VIRTUAL_END_DEVICE_SITE_ID, pricing_reading_type_id=1)
+)
+@pytest.mark.anyio
+async def test_create_unscoped_subscription_entry_added_to_db(
+    pg_base_config, client: AsyncClient, sub_list_uri_format: str, sub_href: str
+):
+    """Simple test that subscription creation works across endpoints from subscribable_resource_hrefs
+    (when the subscription is going to be done via the aggregator end device)"""
+    edev_id = VIRTUAL_END_DEVICE_SITE_ID
+
+    insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
+    insert_request.encoding = SubscriptionEncoding.XML
+    insert_request.notificationURI = "https://example.com/456?foo=bar"
+    insert_request.subscribedResource = sub_href
+    response = await client.post(
+        sub_list_uri_format.format(site_id=edev_id),
+        headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
+        content=Sep2Subscription.to_xml(insert_request),
+    )
+    assert_response_header(response, HTTPStatus.CREATED, expected_content_type=None)
+    location_header = read_location_header(response)
+    assert location_header
+    sub_id = int(location_header.split("/")[-1])  # the last part of the href should be a subscription id
+
+    # Validate the DB record is properly scoped
+    async with generate_async_session(pg_base_config) as session:
+        resp = await session.execute(select(Subscription).where(Subscription.subscription_id == sub_id).limit(1))
+        created_sub = resp.scalars().first()
+        assert created_sub.scoped_site_id is None, "Expected a unscoped sub"
+        assert_nowish(created_sub.changed_time)
+
+
+@pytest.mark.anyio
+async def test_create_subscription_site_id_mismatches_subscription(client: AsyncClient, sub_list_uri_format: str):
+    """When creating a sub check that the subscribed resource owns the requesting edev"""
+
+    # Requests to /edev/0/* must have subbed resource be underneath /edev/0/*
+    for subbed_resource in subscribable_resource_hrefs(site_id=1, pricing_reading_type_id=1):
+        insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
+        insert_request.encoding = SubscriptionEncoding.XML
+        insert_request.notificationURI = "https://example.com/456?foo=bar"
+        insert_request.subscribedResource = subbed_resource
+        response = await client.post(
+            sub_list_uri_format.format(site_id=0),
+            headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
+            content=Sep2Subscription.to_xml(insert_request),
+        )
+        assert_response_header(response, HTTPStatus.BAD_REQUEST)
+        assert_error_response(response)
+
+    # Requests to /edev/1/* must have subbed resource be underneath /edev/1/*
+    for subbed_resource in subscribable_resource_hrefs(site_id=0, pricing_reading_type_id=1):
+        insert_request: Sep2Subscription = generate_class_instance(Sep2Subscription)
+        insert_request.encoding = SubscriptionEncoding.XML
+        insert_request.notificationURI = "https://example.com/456?foo=bar"
+        insert_request.subscribedResource = subbed_resource
+        response = await client.post(
+            sub_list_uri_format.format(site_id=1),
+            headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)},
+            content=Sep2Subscription.to_xml(insert_request),
+        )
+        assert_response_header(response, HTTPStatus.BAD_REQUEST)
+        assert_error_response(response)
 
 
 @pytest.mark.anyio

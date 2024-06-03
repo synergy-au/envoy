@@ -2,8 +2,10 @@ from datetime import datetime
 from typing import Any, Optional, Union
 
 import pytest
+from envoy_schema.server.schema.sep2.types import DeviceCategory
 
-from envoy.server.mapper.common import generate_href, generate_mrid, remove_href_prefix
+from envoy.server.exception import InvalidMappingError
+from envoy.server.mapper.common import generate_href, generate_mrid, parse_device_category, remove_href_prefix
 from envoy.server.request_state import RequestStateParameters
 
 
@@ -58,14 +60,16 @@ def test_generate_mrid_128_bit():
 )
 def test_generate_href(uri_format: str, prefix: Optional[str], args: Any, kwargs: Any, expected: str):
     """Tests various combinations of args/kwargs/prefixes"""
+    request_state_parameters = RequestStateParameters(1, None, prefix)
+
     if args is not None and kwargs is not None:
-        assert generate_href(uri_format, RequestStateParameters(1, prefix), *args, **kwargs) == expected
+        assert generate_href(uri_format, request_state_parameters, *args, **kwargs) == expected
     elif args is not None:
-        assert generate_href(uri_format, RequestStateParameters(1, prefix), *args) == expected
+        assert generate_href(uri_format, request_state_parameters, *args) == expected
     elif kwargs is not None:
-        assert generate_href(uri_format, RequestStateParameters(1, prefix), **kwargs) == expected
+        assert generate_href(uri_format, request_state_parameters, **kwargs) == expected
     else:
-        assert generate_href(uri_format, RequestStateParameters(1, prefix)) == expected
+        assert generate_href(uri_format, request_state_parameters) == expected
 
 
 @pytest.mark.parametrize(
@@ -81,7 +85,7 @@ def test_generate_href(uri_format: str, prefix: Optional[str], args: Any, kwargs
     ],
 )
 def test_remove_href_prefix(uri: str, prefix: Optional[str], expected: str):
-    ps = RequestStateParameters(1, prefix)
+    ps = RequestStateParameters(1, None, prefix)
     assert remove_href_prefix(uri, ps) == expected
 
 
@@ -89,7 +93,43 @@ def test_generate_href_format_errors():
     """Ensures that errors raised by format propogate up"""
 
     with pytest.raises(KeyError):
-        generate_href("{p1}/{p2}", RequestStateParameters(1, None), p1="val1")
+        generate_href("{p1}/{p2}", RequestStateParameters(1, None, None), p1="val1")
 
     with pytest.raises(KeyError):
-        generate_href("{p1}/{p2}", RequestStateParameters(1, "prefix/"), p1="val1")
+        generate_href("{p1}/{p2}", RequestStateParameters(1, None, "prefix/"), p1="val1")
+
+
+@pytest.mark.parametrize(
+    "device_category_str, expected_value",
+    [
+        ("2000000", DeviceCategory.OTHER_STORAGE_SYSTEM),
+        ("1", DeviceCategory.PROGRAMMABLE_COMMUNICATING_THERMOSTAT),
+        ("", DeviceCategory(0)),
+        (None, DeviceCategory(0)),
+    ],
+)
+def test_parse_device_category(device_category_str: Optional[str], expected_value: DeviceCategory):
+    """Test parse_device_category string conversion to DeviceCategory"""
+    result = parse_device_category(device_category_str)
+    assert isinstance(result, DeviceCategory)
+    assert result == expected_value
+
+
+@pytest.mark.parametrize(
+    "device_category_str",
+    ["4000000", "-1"],
+)
+def test_parse_device_category__raises_mappingerror(device_category_str):
+    """Test parse_device_category raises InvalidMappingError for values out of range"""
+    with pytest.raises(InvalidMappingError):
+        parse_device_category(device_category_str)
+
+
+@pytest.mark.parametrize(
+    "device_category_str",
+    ["NOTAVALIDHEXSTRING", "5.0"],
+)
+def test_parse_device_category__raises_valueerror(device_category_str):
+    """Test parse_device_category raises ValueError for values that don't represent a valid hex strings"""
+    with pytest.raises(ValueError):
+        parse_device_category(device_category_str)
