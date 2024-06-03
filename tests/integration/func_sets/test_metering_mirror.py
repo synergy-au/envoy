@@ -122,6 +122,31 @@ async def test_get_mirror_usage_point_list_pagination(
             ),
             "/mup/6",
         ),
+        # Create a new mup with powerOfTenMultiplier = 0
+        (
+            MirrorUsagePointRequest.model_validate(
+                {
+                    "mRID": "123",
+                    "deviceLFDI": "site1-lfdi",
+                    "serviceCategoryKind": ServiceKind.ELECTRICITY,
+                    "roleFlags": 0,
+                    "status": 0,
+                    "mirrorMeterReadings": [
+                        {
+                            "mRID": "123abc",
+                            "readingType": {
+                                "powerOfTenMultiplier": 0,
+                                "kind": KindType.POWER,
+                                "uom": UomType.DISPLACEMENT_POWER_FACTOR_COSTHETA,
+                                "phase": PhaseCode.PHASE_CA,
+                                "flowDirection": FlowDirectionType.REVERSE,
+                            },
+                        }
+                    ],
+                }
+            ),
+            "/mup/6",
+        ),
         # Update an existing mup
         (
             MirrorUsagePointRequest.model_validate(
