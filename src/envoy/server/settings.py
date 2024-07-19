@@ -19,6 +19,10 @@ class AppSettings(CommonSettings):
     default_doe_import_active_watts: Optional[str] = None  # Constant default DERControl import as a decimal float
     default_doe_export_active_watts: Optional[str] = None  # Constant default DERControl export as a decimal float
 
+    install_csip_v11a_opt_in_middleware: Optional[bool] = (
+        False  # Flag whether to install the envoy.server.api.depends.csipaus.AllowEquivalentXmlNsMiddleware
+    )
+
     @property
     def fastapi_kwargs(self) -> Dict[str, Any]:
         return {
