@@ -27,13 +27,13 @@ from envoy.server.model.tariff import TariffGeneratedRate
 @pytest.mark.parametrize(
     "value, power_of_ten, flow_direction, expected_value",
     [
-        (1234, 3, FlowDirectionType.FORWARD, Decimal("1.234")),
-        (1234, 3, FlowDirectionType.NOT_APPLICABLE, Decimal("1.234")),
-        (1234, 3, FlowDirectionType.REVERSE, Decimal("-1.234")),
+        (1234, 3, FlowDirectionType.FORWARD, Decimal("1234000")),
+        (1234, 3, FlowDirectionType.NOT_APPLICABLE, Decimal("1234000")),
+        (1234, 3, FlowDirectionType.REVERSE, Decimal("-1234000")),
         (1234, 0, FlowDirectionType.FORWARD, Decimal("1234")),
-        (1234, -3, FlowDirectionType.FORWARD, Decimal("1234000")),
-        (1234, -3, FlowDirectionType.NOT_APPLICABLE, Decimal("1234000")),
-        (1234, -3, FlowDirectionType.REVERSE, Decimal("-1234000")),
+        (1234, -3, FlowDirectionType.FORWARD, Decimal("1.234")),
+        (1234, -3, FlowDirectionType.NOT_APPLICABLE, Decimal("1.234")),
+        (1234, -3, FlowDirectionType.REVERSE, Decimal("-1.234")),
         (0, 0, FlowDirectionType.FORWARD, Decimal("0")),
         (0, 10, FlowDirectionType.FORWARD, Decimal("0")),
         (0, -10, FlowDirectionType.FORWARD, Decimal("0")),
@@ -190,9 +190,9 @@ TS_2 = datetime(2023, 2, 2, 2, 2, 2)
     "expected_inputs, expected_outputs",
     [
         ([], []),  # Empty list
-        ([(1, TS_1, 100, -1, SRT_PRIMACY_HIGHEST)], [(1, TS_1, Decimal("1000"))]),  # Singleton
+        ([(1, TS_1, 100, 1, SRT_PRIMACY_HIGHEST)], [(1, TS_1, Decimal("1000"))]),  # Singleton
         (
-            [(1, TS_1, 100, -1, SRT_PRIMACY_HIGHEST), (1, TS_2, 100, 0, SRT_PRIMACY_HIGHEST)],
+            [(1, TS_1, 100, 1, SRT_PRIMACY_HIGHEST), (1, TS_2, 100, 0, SRT_PRIMACY_HIGHEST)],
             [(1, TS_1, Decimal("1000")), (1, TS_2, Decimal("100"))],
         ),  # Multiple, no aggregation, variation on timestamp
         (
@@ -201,35 +201,35 @@ TS_2 = datetime(2023, 2, 2, 2, 2, 2)
         ),  # Multiple, no aggregation, variation on site
         (
             [
-                (1, TS_1, 1, 1, SRT_PRIMACY_HIGHEST),
-                (1, TS_1, 2, 2, SRT_PRIMACY_HIGHEST),
-                (1, TS_1, 3, 3, SRT_PRIMACY_HIGHEST),
+                (1, TS_1, 1, -1, SRT_PRIMACY_HIGHEST),
+                (1, TS_1, 2, -2, SRT_PRIMACY_HIGHEST),
+                (1, TS_1, 3, -3, SRT_PRIMACY_HIGHEST),
             ],
             [(1, TS_1, Decimal("0.123"))],
         ),  # Multiple, aggregate everything
         (
             [
-                (1, TS_1, 1, 1, SRT_PRIMACY_HIGHEST),
-                (1, TS_1, 2, 2, SRT_PRIMACY_LOW),
-                (1, TS_1, 3, 3, SRT_PRIMACY_HIGHEST),
+                (1, TS_1, 1, -1, SRT_PRIMACY_HIGHEST),
+                (1, TS_1, 2, -2, SRT_PRIMACY_LOW),
+                (1, TS_1, 3, -3, SRT_PRIMACY_HIGHEST),
             ],
             [(1, TS_1, Decimal("0.103"))],
         ),  # Multiple, aggregate everything but only take the "best" readings
         (
             [
-                (1, TS_1, 1, 1, SRT_PRIMACY_LOWEST),
-                (1, TS_1, 2, 2, SRT_PRIMACY_LOWEST),
-                (1, TS_1, 3, 3, SRT_PRIMACY_LOWEST),
-                (1, TS_2, 4, 4, SRT_PRIMACY_LOWEST),
+                (1, TS_1, 1, -1, SRT_PRIMACY_LOWEST),
+                (1, TS_1, 2, -2, SRT_PRIMACY_LOWEST),
+                (1, TS_1, 3, -3, SRT_PRIMACY_LOWEST),
+                (1, TS_2, 4, -4, SRT_PRIMACY_LOWEST),
             ],
             [(1, TS_1, Decimal("0.123")), (1, TS_2, Decimal("0.0004"))],
         ),  # Multiple, some aggregation, finishing on non aggregate value
         (
             [
-                (1, TS_1, 4, -4, SRT_PRIMACY_HIGH),
-                (1, TS_2, 1, -1, SRT_PRIMACY_HIGH),
-                (1, TS_2, 2, -2, SRT_PRIMACY_HIGH),
-                (1, TS_2, 3, -3, SRT_PRIMACY_HIGH),
+                (1, TS_1, 4, 4, SRT_PRIMACY_HIGH),
+                (1, TS_2, 1, 1, SRT_PRIMACY_HIGH),
+                (1, TS_2, 2, 2, SRT_PRIMACY_HIGH),
+                (1, TS_2, 3, 3, SRT_PRIMACY_HIGH),
             ],
             [(1, TS_1, Decimal("40000")), (1, TS_2, Decimal("3210"))],
         ),  # Multiple, some aggregation, finishing on aggregate value
@@ -262,7 +262,9 @@ TS_2 = datetime(2023, 2, 2, 2, 2, 2)
 def test_aggregate_readings_for_site_timestamp(
     expected_inputs: tuple[int, datetime, int, int, SiteReadingType], expected_outputs: tuple[int, datetime, Decimal]
 ):
-    """Tests aggregate_readings_for_site_timestamp using a shorthand definition for input/output readings"""
+    """Tests aggregate_readings_for_site_timestamp using a shorthand definition for input/output readings
+
+    expected_inputs: (site_id, time_period_start, value_int, pow10, srt)"""
     duration_seconds = 54123
 
     # Convert our simplified input data into real input site_readings
