@@ -38,7 +38,9 @@ async def select_all_does(
     limit: int,
     changed_after: Optional[datetime],
 ) -> Sequence[DynamicOperatingEnvelope]:
-    """Admin selecting of does - no filtering on aggregator is made. Returns ordered by dynamic_operating_envelope_id"""
+    """Admin selecting of does - no filtering on aggregator is made. Returns ordered by dynamic_operating_envelope_id
+
+    changed_after is INCLUSIVE"""
 
     stmt = (
         select(DynamicOperatingEnvelope)

@@ -52,7 +52,7 @@ async def get_all_does(
     Query Param:
         start: start index value (for pagination). Default 0.
         limit: maximum number of objects to return. Default 100. Max 500.
-        after: Filters objects that have been created/modified after this timestamp (inclusive). Default no filter.
+        after: Filters objects that have been created/modified from this timestamp (inclusive). Default no filter.
 
     Returns:
         DoePageResponse
