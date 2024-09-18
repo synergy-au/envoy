@@ -1,8 +1,7 @@
 import unittest.mock as mock
 from datetime import datetime, timezone
-from typing import cast
+from typing import Optional, cast
 from zoneinfo import ZoneInfo
-
 import pytest
 from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
@@ -398,6 +397,15 @@ def test_entities_to_notification_unknown_resource():
         entities_to_notification(9999, Subscription(resource_type=9999), (1, 2, 3), None, [], None)
 
 
+def assert_hex_binary_enum_matches(expected: Optional[str], actual: Optional[int]):
+    """Asserts that a known enum matches its hex binary representation (considering nullability)"""
+    if expected is None or actual is None:
+        assert actual == expected
+        return
+
+    assert int(expected) == actual
+
+
 @pytest.mark.parametrize(
     "resource, entity_class",
     [
@@ -415,6 +423,7 @@ def test_entities_to_notification_sites(resource: SubscriptionResource, entity_c
     """For every resource/type mapping - generate a notification and do some cursory examination of the
     resulting notification - the majority of the test are captured in the mapper unit tests - this is here
     to catch parameter errors / other simple issues"""
+
     href_prefix = "/my_href/prefix"
     sub = Subscription(resource_type=resource, notification_uri="http://example.com/foo")
     pricing_reading_type = (
@@ -463,9 +472,9 @@ def test_entities_to_notification_sites(resource: SubscriptionResource, entity_c
         elif resource == SubscriptionResource.SITE_DER_AVAILABILITY and entity_length:
             assert notification.resource.statWAvail.value == entities[0].estimated_w_avail_value
         elif resource == SubscriptionResource.SITE_DER_RATING and entity_length:
-            assert notification.resource.doeModesSupported == entities[0].doe_modes_supported
+            assert_hex_binary_enum_matches(notification.resource.doeModesSupported, entities[0].doe_modes_supported)
         elif resource == SubscriptionResource.SITE_DER_SETTING and entity_length:
-            assert notification.resource.doeModesEnabled == entities[0].doe_modes_enabled
+            assert_hex_binary_enum_matches(notification.resource.doeModesEnabled, entities[0].doe_modes_enabled)
         elif resource == SubscriptionResource.SITE_DER_STATUS and entity_length:
             assert notification.resource.inverterStatus.value == entities[0].inverter_status
 
