@@ -1,11 +1,13 @@
 from datetime import datetime
-from typing import Iterable, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as psql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from envoy.server.crud.archive import copy_rows_into_archive, delete_rows_into_archive
+from envoy.server.model.archive.site_reading import ArchiveSiteReading, ArchiveSiteReadingType
 from envoy.server.model.site import Site
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 
@@ -125,7 +127,7 @@ async def upsert_site_reading_type_for_aggregator(
     """Creates or updates the specified site reading type. If site's aggregator_id doesn't match aggregator_id then
     this will raise an error without modifying the DB. Returns the site_reading_type_id of the inserted/existing site
 
-    Relying on postgresql dialect for upsert capability. Unfortunately this breaks the typical ORM insert pattern.
+    The current value (if any) for the SiteReadingType will be archived
 
     Returns the site_reading_type_id of the created/updated SiteReadingType"""
 
@@ -134,6 +136,26 @@ async def upsert_site_reading_type_for_aggregator(
             f"Specified aggregator_id {aggregator_id} mismatches site.aggregator_id {site_reading_type.aggregator_id}"
         )
 
+    # "Save" any existing records with the same data to the archive table
+    await copy_rows_into_archive(
+        session,
+        SiteReadingType,
+        ArchiveSiteReadingType,
+        lambda q: q.where(
+            (SiteReadingType.aggregator_id == aggregator_id)
+            & (SiteReadingType.site_id == site_reading_type.site_id)
+            & (SiteReadingType.uom == site_reading_type.uom)
+            & (SiteReadingType.data_qualifier == site_reading_type.data_qualifier)
+            & (SiteReadingType.flow_direction == site_reading_type.flow_direction)
+            & (SiteReadingType.accumulation_behaviour == site_reading_type.accumulation_behaviour)
+            & (SiteReadingType.kind == site_reading_type.kind)
+            & (SiteReadingType.phase == site_reading_type.phase)
+            & (SiteReadingType.power_of_ten_multiplier == site_reading_type.power_of_ten_multiplier)
+            & (SiteReadingType.default_interval_seconds == site_reading_type.default_interval_seconds)
+        ),
+    )
+
+    # Perform the upsert
     table = SiteReadingType.__table__
     update_cols = [c.name for c in table.c if c not in list(table.primary_key.columns) and not c.server_default]  # type: ignore [attr-defined] # noqa: E501
     stmt = psql_insert(SiteReadingType).values(**{k: getattr(site_reading_type, k) for k in update_cols})
@@ -158,21 +180,29 @@ async def upsert_site_reading_type_for_aggregator(
     return resp.scalar_one()
 
 
-async def upsert_site_readings(session: AsyncSession, site_readings: Iterable[SiteReading]) -> None:
+async def upsert_site_readings(session: AsyncSession, now: datetime, site_readings: list[SiteReading]) -> None:
     """Creates or updates the specified site readings. It's assumed that each SiteReading will have
     been assigned a valid site_reading_type_id before calling this function. No validation will be made for ownership
 
-    Relying on postgresql dialect for upsert capability. Unfortunately this breaks the typical ORM insert pattern."""
+    Conflicting readings will be deleted (and archived) before being re-inserted.
 
+    now: The current changed_time to mark any updated (deleted and replaced) records with
+    site_readings: The readings to insert/update"""
+
+    # Start by deleting all conflicts (archiving them as we go)
+    where_clause_and_elements = (
+        and_(
+            SiteReading.site_reading_type_id == sr.site_reading_type_id,
+            SiteReading.time_period_start == sr.time_period_start,
+        )
+        for sr in site_readings
+    )
+    or_clause = or_(*where_clause_and_elements)
+    await delete_rows_into_archive(session, SiteReading, ArchiveSiteReading, now, lambda q: q.where(or_clause))
+
+    # Now we can do the inserts
     table = SiteReading.__table__
     update_cols = [c.name for c in table.c if c not in list(table.primary_key.columns) and not c.server_default]  # type: ignore [attr-defined] # noqa: E501
-    stmt = psql_insert(SiteReading).values([{k: getattr(sr, k) for k in update_cols} for sr in site_readings])
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[
-            SiteReading.site_reading_type_id,
-            SiteReading.time_period_start,
-        ],
-        set_={k: getattr(stmt.excluded, k) for k in update_cols},
+    await session.execute(
+        insert(SiteReading).values(([{k: getattr(sr, k) for k in update_cols} for sr in site_readings]))
     )
-
-    await session.execute(stmt)

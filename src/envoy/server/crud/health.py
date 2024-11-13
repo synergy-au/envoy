@@ -44,8 +44,8 @@ async def check_database(session: AsyncSession, check: HealthCheck) -> None:
         stmt = select(func.count()).select_from(Aggregator)
         resp = await session.execute(stmt)
 
-        check.database_connectivity = True
         check.database_has_data = resp.scalar_one() > 0
+        check.database_connectivity = True
     except Exception as ex:
         check.database_connectivity = False
         logger.error(f"check_database: Exception checking database connectivity {ex}")
