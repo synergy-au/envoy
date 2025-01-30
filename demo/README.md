@@ -22,7 +22,7 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up
 ```
 
 This will start the following services:
-* [nginx](https://nginx.org/): for providing TLS validation/termination 
+* [nginx](https://nginx.org/): for providing TLS validation/termination
     * testing client certificates and keys will generate in `./tls-termination/test_certs/`
     * Will expose and listen on port `8443`
     * Will only accept TLS connections with a client cert that has been signed by the "test CA" (see below)
@@ -35,9 +35,9 @@ This will start the following services:
     * Port `8001` will allow requests to access the envoy-admin API directly.
 
 
-## Client Certificate
+## Client Certificates
 
-The underlying IEEE 2030.5 standard requires specially signed certificates to identify clients. When this example is first executed, it will create the following files in the directory: 
+The underlying IEEE 2030.5 standard requires specially signed certificates to identify clients. When this example is first executed, it will create the following files in the directory:
 
 `tls-termination/test_certs/`
 
@@ -45,13 +45,16 @@ The underlying IEEE 2030.5 standard requires specially signed certificates to id
 |------|-------------|
 | `testca.crt` | Certificate for the self signed certificate authority (CA) that will be signing the client/proxy certs |
 | `testca.key` | Private Key for the self signed certificate authority (CA) that will be signing the client/proxy certs. Will have passphrase `testcapassphrase` |
-| `testclient.crt` | Certificate for the client certificate registered to a testing "aggregator" |
-| `testclient.key` | Private Key for the client certificate registered to a testing "aggregator". Will have passphrase `testclientpassphrase` |
-| `testclient.p12` | P12/PFX combination of the `testclient.crt` and `testclient.key`. Will have passphrase `testclientpassphrase` |
+| `testaggregator.crt` | Certificate for the client certificate registered to a testing "aggregator" |
+| `testaggregator.key` | Private Key for the client certificate registered to a testing "aggregator". Will have passphrase `testclientpassphrase` |
+| `testaggregator.p12` | PKCS#12/PFX, a convenient combination of the `testaggregator.crt` and `testaggregator.key`. Will have passphrase `testclientpassphrase` |
+ `testdevice.crt` | Certificate for the client certificate registered to a testing non-aggregator "device" |
+| `testdevice.key` | Private Key for the client certificate registered to a testing non-aggregator "device". Will have passphrase `testclientpassphrase` |
+| `testdevice.p12` | PKCS#12/PFX, a convenient combination of the `testdevice.crt` and `testdevice.key`. Will have passphrase `testclientpassphrase` |
 
-You are welcome to sign additional certificates using the "test ca"
+The client certificates described in the table above are signed by the test CA and can be used against the nginx instance exposed on port 8443.
 
-Any requests to the nginx instance on port 8443 will require a client certificate signed by the test CA.
+You are welcome to sign additional certificates using the "test ca", but please note that authorising the certificate as an 'aggregator' will require it to be registered in the `envoy-db` database. To do this, the certificate must be first registered to `public.certificate` (using its lFDI) and linked to `public.aggregator` via the linking table `public.aggregator_certificate_assignment`. A more detailed procedure will be provided in future documentation.
 
 ## Making your first request
 
@@ -66,7 +69,7 @@ curl --cacert ./tls-termination/test_certs/testca.crt --cert ./tls-termination/t
 
 ## Connecting with Postman
 
-In the root repository directory under `postman/` you'll find Postman collections for both envoy and envoy-admin. 
+In the root repository directory under `postman/` you'll find Postman collections for both envoy and envoy-admin.
 
 You'll need to import them and then do the following:
 1. File -> Settings -> Certificates -> Client Certificates -> Add Certificate
@@ -78,7 +81,7 @@ You'll need to import them and then do the following:
 
 ## Initial Database Content
 
-When first loaded, the database will be loaded with the bare minimum to run envoy and connect. Only a test aggregator with a linked client certificate will be loaded.
+When first loaded, the database will be loaded with the bare minimum to run envoy and connect. Only a test aggregator and non-aggregator devices with the provided client certificates will be loaded.
 
 This will be enough to run `EndDevice` registration workflows.
 
