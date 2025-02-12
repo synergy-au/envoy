@@ -32,13 +32,15 @@ AFTER_TIME = datetime(2024, 5, 6, 7, 8)
 @mock.patch("envoy.server.manager.end_device.select_all_sites_with_aggregator_id")
 @mock.patch("envoy.server.manager.end_device.select_aggregator_site_count")
 @pytest.mark.parametrize(
-    "scope, returned_site, returned_site_list, returned_count, expected_count, expected_sites",
+    "scope, returned_site, start, limit, returned_site_list, returned_count, expected_count, expected_sites",
     [
         (
             generate_class_instance(
                 UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
             ),
             None,  # Single Site
+            0,  # Start
+            456,  # Limit
             Exception(),  # Site List
             Exception(),  # Site List Count
             0,
@@ -49,6 +51,8 @@ AFTER_TIME = datetime(2024, 5, 6, 7, 8)
                 UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
             ),
             generate_class_instance(Site, seed=1234, changed_time=AFTER_TIME + timedelta(seconds=1)),  # Single Site
+            0,  # Start
+            456,  # Limit
             Exception(),  # Site List
             Exception(),  # Site List Count
             1,
@@ -58,7 +62,45 @@ AFTER_TIME = datetime(2024, 5, 6, 7, 8)
             generate_class_instance(
                 UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
             ),
+            generate_class_instance(Site, seed=1234, changed_time=AFTER_TIME + timedelta(seconds=1)),  # Single Site
+            1,  # Start
+            456,  # Limit
+            Exception(),  # Site List
+            Exception(),  # Site List Count
+            1,
+            [],
+        ),  # Device cert - has registered but skipped through pagination
+        (
+            generate_class_instance(
+                UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
+            ),
+            generate_class_instance(Site, seed=1234, changed_time=AFTER_TIME + timedelta(seconds=1)),  # Single Site
+            0,  # Start
+            0,  # Limit
+            Exception(),  # Site List
+            Exception(),  # Site List Count
+            1,
+            [],
+        ),  # Device cert - has registered but skipped through limit
+        (
+            generate_class_instance(
+                UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
+            ),
+            generate_class_instance(Site, seed=1234, changed_time=AFTER_TIME + timedelta(seconds=1)),  # Single Site
+            1,  # Start
+            0,  # Limit
+            Exception(),  # Site List
+            Exception(),  # Site List Count
+            1,
+            [],
+        ),  # Device cert - has registered but skipped through limit and start
+        (
+            generate_class_instance(
+                UnregisteredRequestScope, source=CertificateType.DEVICE_CERTIFICATE, aggregator_id=NULL_AGGREGATOR_ID
+            ),
             generate_class_instance(Site, seed=1234, changed_time=AFTER_TIME - timedelta(seconds=1)),  # Single Site
+            123,  # Start
+            456,  # Limit
             Exception(),  # Site List
             Exception(),  # Site List Count
             0,
@@ -69,6 +111,8 @@ AFTER_TIME = datetime(2024, 5, 6, 7, 8)
                 UnregisteredRequestScope, source=CertificateType.AGGREGATOR_CERTIFICATE, aggregator_id=987
             ),
             Exception(),  # Single Site
+            123,  # Start
+            456,  # Limit
             [generate_class_instance(Site, seed=4321)],  # Site List
             789,  # Site List Count
             789,
@@ -81,6 +125,8 @@ async def test_fetch_sites_and_count_for_claims(
     mock_select_all_sites_with_aggregator_id: mock.MagicMock,
     mock_select_single_site_with_lfdi: mock.MagicMock,
     scope: UnregisteredRequestScope,
+    start: int,
+    limit: int,
     returned_site: Union[Exception, Optional[Site]],
     returned_site_list: Union[Exception, list[Site]],
     returned_count: Union[Exception, int],
@@ -91,8 +137,6 @@ async def test_fetch_sites_and_count_for_claims(
     all of the various edge cases"""
 
     session = create_mock_session()
-    start = 123
-    limit = 456
 
     # Exception is a placeholder for "this mock won't be used in this test case"
     if not isinstance(returned_site, Exception):
@@ -580,6 +624,10 @@ async def test_fetch_enddevicelist_for_scope_aggregator_skipping_virtual_edev(
     mock_fetch_sites_and_count_for_claims.assert_called_once_with(mock_session, scope, start - 1, after, limit)
 
 
+@pytest.mark.parametrize(
+    "input_limit, expected_query_limit, includes_virtual_edev",
+    [(0, 0, False), (1, 0, True), (5, 4, True), (9999, 9998, True), (-1, 0, False)],
+)
 @pytest.mark.anyio
 @mock.patch("envoy.server.manager.end_device.fetch_sites_and_count_for_claims")
 @mock.patch("envoy.server.manager.end_device.EndDeviceListMapper")
@@ -588,13 +636,16 @@ async def test_fetch_enddevicelist_for_scope_aggregator(
     mock_get_virtual_site_for_aggregator: mock.MagicMock,
     mock_EndDeviceListMapper: mock.MagicMock,
     mock_fetch_sites_and_count_for_claims: mock.MagicMock,
+    input_limit: int,
+    expected_query_limit: int,
+    includes_virtual_edev: bool,
 ):
-    """Checks that fetching the enddevice list just passes through to the relevant CRUD"""
+    """Checks that fetching the enddevice list just passes through to the relevant CRUD. Also validates that the virtual
+    end device behaves when limit is 0 or below"""
     # Arrange
     mock_session = create_mock_session()
     start = 0
     after = datetime.now()
-    limit = 5
     mapped_ed_list: EndDeviceListResponse = generate_class_instance(EndDeviceListResponse)
     returned_site_count = 123
     returned_sites: list[Site] = [
@@ -611,25 +662,32 @@ async def test_fetch_enddevicelist_for_scope_aggregator(
     mock_fetch_sites_and_count_for_claims.return_value = (returned_sites, returned_site_count)
     # Act
     result: EndDeviceListResponse = await EndDeviceListManager.fetch_enddevicelist_for_scope(
-        mock_session, scope, start, after, limit
+        mock_session, scope, start, after, input_limit
     )
 
     # Assert
     assert result is mapped_ed_list
     assert_mock_session(mock_session, committed=False)
 
+    expected_virtual_site = returned_virtual_site if includes_virtual_edev else None
     mock_EndDeviceListMapper.map_to_response.assert_called_once_with(
         scope=scope,
         site_list=returned_sites,
         site_count=returned_site_count + 1,
-        virtual_site=returned_virtual_site,
+        virtual_site=expected_virtual_site,
     )
-    mock_fetch_sites_and_count_for_claims.assert_called_once_with(mock_session, scope, start, after, limit - 1)
-    mock_get_virtual_site_for_aggregator.assert_called_once_with(
-        session=mock_session,
-        aggregator_id=scope.aggregator_id,
-        aggregator_lfdi=scope.lfdi,
+    mock_fetch_sites_and_count_for_claims.assert_called_once_with(
+        mock_session, scope, start, after, expected_query_limit
     )
+
+    if includes_virtual_edev:
+        mock_get_virtual_site_for_aggregator.assert_called_once_with(
+            session=mock_session,
+            aggregator_id=scope.aggregator_id,
+            aggregator_lfdi=scope.lfdi,
+        )
+    else:
+        mock_get_virtual_site_for_aggregator.assert_not_called()
 
 
 @pytest.mark.anyio
