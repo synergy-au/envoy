@@ -2,6 +2,7 @@ import re
 import unittest.mock as mock
 from datetime import datetime
 from http import HTTPStatus
+from itertools import chain
 from typing import Optional
 
 import pytest
@@ -81,6 +82,12 @@ ALL_ENDPOINTS_WITH_SUPPORTED_METHODS: list[tuple[list[HTTPMethod], str]] = [
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.PUT, HTTPMethod.POST], "/edev/1/der/1/dercap"),
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.PUT, HTTPMethod.POST], "/edev/1/der/1/derg"),
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.PUT, HTTPMethod.POST], "/edev/1/der/1/ders"),
+
+    # response function set
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/rsps"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/rsps/doe"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.POST], "/edev/1/rsps/doe/rsp"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/rsps/doe/rsp/1"),
 ]
 # fmt: on
 
@@ -220,6 +227,7 @@ async def _do_crawl(client: AsyncClient, valid_headers: dict, expected_href_pref
     ]
     visited_uris: set[str] = set()
     href_extractor = re.compile('href[\\r\\n ]*=[\\r\\n ]*"([^"]*)"', re.MULTILINE | re.IGNORECASE)
+    reply_to_extractor = re.compile('replyTo[\\r\\n ]*=[\\r\\n ]*"([^"]*)"', re.MULTILINE | re.IGNORECASE)
 
     while len(uris_to_visit) > 0:
         # get the next URI to visit
@@ -238,7 +246,7 @@ async def _do_crawl(client: AsyncClient, valid_headers: dict, expected_href_pref
 
         # search for more hrefs to request from our response
         # Ensure they all start with prefix
-        for match in re.finditer(href_extractor, body):
+        for match in chain(re.finditer(href_extractor, body), re.finditer(reply_to_extractor, body)):
             new_uri = match.group(1)
 
             if expected_href_prefix is not None:

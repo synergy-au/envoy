@@ -1,10 +1,10 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
-from enum import IntEnum, auto
 from itertools import islice, product
 from typing import Iterator, Sequence
 
 from envoy_schema.server.schema import uri
+from envoy_schema.server.schema.sep2.event import EventStatus
 from envoy_schema.server.schema.sep2.identification import Link, ListLink
 from envoy_schema.server.schema.sep2.metering import ReadingType
 from envoy_schema.server.schema.sep2.pricing import (
@@ -28,25 +28,27 @@ from envoy_schema.server.schema.sep2.types import (
     TOUType,
     UomType,
 )
-from envoy_schema.server.schema.sep2.event import EventStatus
+
 from envoy.server.crud.pricing import TariffGeneratedRateDailyStats
 from envoy.server.exception import InvalidMappingError
-from envoy.server.mapper.common import generate_href, generate_mrid
+from envoy.server.mapper.common import generate_href
+from envoy.server.mapper.constants import PricingReadingType, ResponseSetType
 from envoy.server.mapper.sep2.der import to_hex_binary
+from envoy.server.mapper.sep2.mrid import MridMapper
+from envoy.server.mapper.sep2.response import SPECIFIC_RESPONSE_REQUIRED, ResponseListMapper
 from envoy.server.model.tariff import PRICE_DECIMAL_PLACES, PRICE_DECIMAL_POWER, Tariff, TariffGeneratedRate
 from envoy.server.request_scope import BaseRequestScope, DeviceOrAggregatorRequestScope, SiteRequestScope
-
-TARIFF_PROFILE_MRID_PREFIX: int = int("B111", 16)
-RATE_MRID_PREFIX: int = int("D01A", 16)
 
 
 class TariffProfileMapper:
     @staticmethod
-    def _map_to_response(tariff: Tariff, tp_href: str, total_rates: int) -> TariffProfileResponse:
+    def _map_to_response(
+        scope: BaseRequestScope, tariff: Tariff, tp_href: str, total_rates: int
+    ) -> TariffProfileResponse:
         return TariffProfileResponse.model_validate(
             {
                 "href": tp_href,
-                "mRID": generate_mrid(TARIFF_PROFILE_MRID_PREFIX, tariff.tariff_id),
+                "mRID": MridMapper.encode_tariff_profile_mrid(scope, tariff.tariff_id),
                 "description": tariff.name,
                 "currency": tariff.currency_code,
                 "pricePowerOfTenMultiplier": -PRICE_DECIMAL_PLACES,  # Needs to negate - $1 is encoded as 10000 * 10^-4
@@ -66,14 +68,14 @@ class TariffProfileMapper:
         This endpoint is designed to operate independent of a particular scope to allow encoding of multiple
         different sites. It's the responsibility of the caller to validate the scope before calling this."""
         tp_href = generate_href(uri.TariffProfileUri, scope, tariff_id=tariff.tariff_id, site_id=scope.display_site_id)
-        return TariffProfileMapper._map_to_response(tariff, tp_href, total_rates)
+        return TariffProfileMapper._map_to_response(scope, tariff, tp_href, total_rates)
 
     @staticmethod
     def map_to_nosite_response(scope: BaseRequestScope, tariff: Tariff) -> TariffProfileResponse:
         """Returns a mapped sep2 entity. The href to RateComponentListLink will be to an endpoint
         for returning rate components for an unspecified site id"""
         tp_href = generate_href(uri.TariffProfileUnscopedUri, scope, tariff_id=tariff.tariff_id)
-        return TariffProfileMapper._map_to_response(tariff, tp_href, 0)
+        return TariffProfileMapper._map_to_response(scope, tariff, tp_href, 0)
 
     @staticmethod
     def map_to_list_nosite_response(
@@ -114,15 +116,6 @@ class TariffProfileMapper:
                 "TariffProfile": tariff_profiles,
             }
         )
-
-
-class PricingReadingType(IntEnum):
-    """The different types of readings that can be priced"""
-
-    IMPORT_ACTIVE_POWER_KWH = auto()
-    EXPORT_ACTIVE_POWER_KWH = auto()
-    IMPORT_REACTIVE_POWER_KVARH = auto()
-    EXPORT_REACTIVE_POWER_KVARH = auto()
 
 
 TOTAL_PRICING_READING_TYPES = len(PricingReadingType)  # The total number of PricingReadingType enums
@@ -206,7 +199,8 @@ class RateComponentMapper:
     ) -> RateComponentResponse:
         """Maps/Creates a single rate component response describing a single type of reading"""
         rate_component_id = day.isoformat()
-        start_timestamp = int(datetime.combine(day, time()).timestamp())
+        # Timezone doesn't really matter here - It just needs to be consistent
+        start_time = datetime.combine(day, time(), tzinfo=timezone.utc)
         rc_href = generate_href(
             uri.RateComponentUri,
             scope,
@@ -218,8 +212,8 @@ class RateComponentMapper:
         return RateComponentResponse.model_validate(
             {
                 "href": rc_href,
-                "mRID": generate_mrid(
-                    TARIFF_PROFILE_MRID_PREFIX, tariff_id, scope.site_id, start_timestamp, pricing_reading
+                "mRID": MridMapper.encode_rate_component_mrid(
+                    scope, tariff_id, scope.site_id, start_time, pricing_reading
                 ),
                 "description": pricing_reading.name,
                 "roleFlags": to_hex_binary(RoleFlagsType.NONE),
@@ -400,8 +394,8 @@ class TimeTariffIntervalMapper:
         return TimeTariffIntervalResponse.model_validate(
             {
                 "href": href,
-                "mRID": generate_mrid(
-                    RATE_MRID_PREFIX,
+                "mRID": MridMapper.encode_time_tariff_interval_mrid(
+                    scope,
                     rate.tariff_generated_rate_id,
                     pricing_reading,
                 ),
@@ -409,6 +403,10 @@ class TimeTariffIntervalMapper:
                 "description": rate.start_time.isoformat(),
                 "touTier": TOUType.NOT_APPLICABLE,
                 "creationTime": int(rate.changed_time.timestamp()),
+                "replyTo": ResponseListMapper.response_list_href(
+                    scope, rate.site_id, ResponseSetType.TARIFF_GENERATED_RATES
+                ),  # Response function set
+                "responseRequired": SPECIFIC_RESPONSE_REQUIRED,  # Response function set
                 "interval": {
                     "start": int(rate.start_time.timestamp()),
                     "duration": rate.duration_seconds,
