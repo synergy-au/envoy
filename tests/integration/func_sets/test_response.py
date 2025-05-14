@@ -241,6 +241,7 @@ async def test_get_response_for_device_cert(
                 changed_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
                 start_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
                 duration_seconds=300,
+                end_time=datetime(2025, 1, 2, 0, 5, 0, tzinfo=timezone.utc),
                 import_limit_active_watts=100,
                 export_limit_watts=200,
             )
@@ -414,6 +415,7 @@ async def test_get_response_list_pagination_for_device_cert(
                 calculation_log_id=None,
                 changed_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
                 start_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
+                end_time=datetime(2025, 1, 2, 0, 5, 0, tzinfo=timezone.utc),
                 duration_seconds=300,
                 import_limit_active_watts=100,
                 export_limit_watts=200,
@@ -509,9 +511,9 @@ async def test_get_response_list_pagination_for_device_cert(
             RATE_HREF,
             MridMapper.encode_time_tariff_interval_mrid(TEST_SCOPE, 1, PricingReadingType.IMPORT_ACTIVE_POWER_KWH),
             PriceResponse,
-            PriceResponse,
-            HTTPStatus.CREATED,
-        ),
+            None,
+            HTTPStatus.FORBIDDEN,
+        ),  # Can't send responses to aggregator end device
         (
             AGG_1_VALID_CERT,
             1,
@@ -536,9 +538,9 @@ async def test_get_response_list_pagination_for_device_cert(
             DOE_HREF,
             MridMapper.encode_doe_mrid(TEST_SCOPE, 1),
             DERControlResponse,
-            DERControlResponse,
-            HTTPStatus.CREATED,
-        ),
+            None,
+            HTTPStatus.FORBIDDEN,
+        ),  # Can't send responses to aggregator end device
         (
             AGG_2_VALID_CERT,
             1,

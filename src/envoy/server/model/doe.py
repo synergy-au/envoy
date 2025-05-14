@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import DECIMAL, BigInteger, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import DECIMAL, BigInteger, DateTime, ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from envoy.server.model.base import Base
@@ -39,4 +39,15 @@ class DynamicOperatingEnvelope(Base):
 
     site: Mapped["Site"] = relationship(lazy="raise")
 
-    __table_args__ = (UniqueConstraint("site_id", "start_time", name="site_id_start_time_uc"),)
+    end_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+    )  # This is to support finding DOE's that are either currently active or yet to start (i.e. not expired)
+    # Ideally this would be Generated/Computed column but in order do this, we'd need support for the immutable
+    # postgres function date_add(start_time, duration_seconds * interval '1 sec', 'UTC'). Unfortunately this was only
+    # added in postgres 16 so we'd be cutting off large chunks of postgresql servers - instead we just manually populate
+    # this as we go.
+
+    __table_args__ = (
+        UniqueConstraint("start_time", "site_id", name="start_time_site_id_uc"),
+        Index("ix_dynamic_operating_envelope_end_time_site_id", "end_time", "site_id"),
+    )
