@@ -26,6 +26,17 @@ class ArchiveDynamicOperatingEnvelope(ArchiveBase):
 
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
+    # NOTE: We've decided to include these 'non-DOE' related fields (that map to DERControl elements) here and
+    # eventually completely drop the DOE concept and convert this entity to reflect the CSIP-AUS DERControl resource.
+    generation_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, original_models.doe.DOE_DECIMAL_PLACES), nullable=True
+    )
+    load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, original_models.doe.DOE_DECIMAL_PLACES), nullable=True
+    )
+    set_energized: Mapped[Optional[bool]] = mapped_column(nullable=True)
+    set_connected: Mapped[Optional[bool]] = mapped_column(nullable=True)
+
     __table_args__ = (
         Index(
             "archive_doe_end_time_deleted_time_site_id", "end_time", "deleted_time", "site_id"

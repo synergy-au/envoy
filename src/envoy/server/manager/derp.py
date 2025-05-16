@@ -16,7 +16,7 @@ from envoy.server.crud.doe import (
     select_doe_include_deleted,
     select_does_at_timestamp,
 )
-from envoy.server.crud.end_device import select_single_site_with_site_id
+from envoy.server.crud.end_device import select_single_site_with_site_id, select_site_with_default_site_control
 from envoy.server.exception import NotFoundError
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.doe import (
@@ -28,6 +28,7 @@ from envoy.server.mapper.csip_aus.doe import (
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
 from envoy.server.model.config.default_doe import DefaultDoeConfiguration
 from envoy.server.model.doe import DynamicOperatingEnvelope
+from envoy.server.model.site import DefaultSiteControl
 from envoy.server.request_scope import SiteRequestScope
 
 
@@ -138,11 +139,42 @@ class DERControlManager:
     ) -> DefaultDERControl:
         """Returns a default DOE control for a site or raises a NotFoundError if the site / defaults are inaccessible
         or not configured"""
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
+        site = await select_site_with_default_site_control(session, scope.site_id, scope.aggregator_id)
         if not site:
             raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
 
-        if not default_doe:
-            raise NotFoundError(f"There is no default DERControl configured for site {scope.site_id}")
+        default_site_control = DERControlManager._resolve_default_site_control(default_doe, site.default_site_control)
+        if default_site_control is None:
+            raise NotFoundError(f"There is no default DefaultDERControl configured for site {scope.site_id}")
+        return DERControlMapper.map_to_default_response(scope, default_site_control)
 
-        return DERControlMapper.map_to_default_response(scope, default_doe)
+    @staticmethod
+    def _resolve_default_site_control(
+        default_doe: Optional[DefaultDoeConfiguration],
+        default_site_control: Optional[DefaultSiteControl] = None,
+    ) -> Optional[DefaultSiteControl]:
+        """Construct DefaultSiteControl with optional fields filled using the global DefaultDoeConfiguration"""
+
+        if default_doe is None:
+            return default_site_control
+
+        if default_site_control is not None:
+            return DefaultSiteControl(
+                import_limit_active_watts=default_site_control.import_limit_active_watts
+                or default_doe.import_limit_active_watts,
+                export_limit_active_watts=default_site_control.export_limit_active_watts
+                or default_doe.export_limit_active_watts,
+                generation_limit_active_watts=default_site_control.generation_limit_active_watts
+                or default_doe.generation_limit_active_watts,
+                load_limit_active_watts=default_site_control.load_limit_active_watts
+                or default_doe.load_limit_active_watts,
+                ramp_rate_percent_per_second=default_site_control.ramp_rate_percent_per_second
+                or default_doe.ramp_rate_percent_per_second,
+            )
+        return DefaultSiteControl(
+            import_limit_active_watts=default_doe.import_limit_active_watts,
+            export_limit_active_watts=default_doe.export_limit_active_watts,
+            generation_limit_active_watts=default_doe.generation_limit_active_watts,
+            load_limit_active_watts=default_doe.load_limit_active_watts,
+            ramp_rate_percent_per_second=default_doe.ramp_rate_percent_per_second,
+        )

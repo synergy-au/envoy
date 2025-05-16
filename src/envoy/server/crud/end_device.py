@@ -1,3 +1,4 @@
+# TODO: rename module to site.py
 from datetime import datetime
 from typing import Optional, Sequence
 
@@ -5,6 +6,7 @@ from envoy_schema.server.schema.sep2.types import DeviceCategory
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as psql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from envoy.server.crud import common
 from envoy.server.crud.aggregator import select_aggregator
@@ -13,6 +15,7 @@ from envoy.server.manager.time import utc_now
 from envoy.server.model.aggregator import Aggregator
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
 from envoy.server.model.archive.site import (
+    ArchiveDefaultSiteControl,
     ArchiveSite,
     ArchiveSiteDER,
     ArchiveSiteDERAvailability,
@@ -25,6 +28,7 @@ from envoy.server.model.archive.subscription import ArchiveSubscription, Archive
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope
 from envoy.server.model.site import (
+    DefaultSiteControl,
     Site,
     SiteDER,
     SiteDERAvailability,
@@ -320,6 +324,21 @@ async def delete_site_for_aggregator(
     # Site Groups assignments aren't archived - we can delete them directly
     await session.execute(delete(SiteGroupAssignment).where(SiteGroupAssignment.site_id == site_id))
 
+    # Archive the DefaultSiteControl
+    default_site_control_id = (
+        await session.execute(
+            (select(DefaultSiteControl.default_site_control_id).where(DefaultSiteControl.site_id == site_id))
+        )
+    ).scalar_one_or_none()
+    if default_site_control_id is not None:
+        await delete_rows_into_archive(
+            session,
+            DefaultSiteControl,
+            ArchiveDefaultSiteControl,
+            deleted_time,
+            lambda q: q.where(DefaultSiteControl.default_site_control_id == default_site_control_id),
+        )
+
     # Finally delete the site
     await delete_rows_into_archive(
         session,
@@ -329,3 +348,19 @@ async def delete_site_for_aggregator(
         lambda q: q.where(Site.site_id == site_id),
     )
     return True
+
+
+async def select_site_with_default_site_control(
+    session: AsyncSession, site_id: int, aggregator_id: int
+) -> Optional[Site]:
+    """Selects the unique Site with the specified site_id and aggregator_id, including the Site's DefaultSiteControls.
+    Returns None if a match isn't found"""
+    stmt = (
+        select(Site)
+        .where((Site.aggregator_id == aggregator_id) & (Site.site_id == site_id))
+        .options(
+            selectinload(Site.default_site_control),
+        )
+    )
+    resp = await session.execute(stmt)
+    return resp.scalar_one_or_none()

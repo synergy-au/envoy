@@ -22,7 +22,8 @@ from envoy.server.mapper.csip_aus.doe import (
 )
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
 from envoy.server.model.config.default_doe import DefaultDoeConfiguration
-from envoy.server.model.doe import DOE_DECIMAL_PLACES, DOE_DECIMAL_POWER, DynamicOperatingEnvelope
+from envoy.server.model.constants import DOE_DECIMAL_PLACES, DOE_DECIMAL_POWER
+from envoy.server.model.doe import DynamicOperatingEnvelope
 from envoy.server.request_scope import BaseRequestScope, DeviceOrAggregatorRequestScope
 
 
@@ -91,14 +92,11 @@ def test_map_default_to_response():
     assert isinstance(result_all_set.DERControlBase_, DERControlBase)
     assert isinstance(result_all_set.mRID, str)
     assert len(result_all_set.mRID) == 32, "Expected 128 bits encoded as hex"
-    assert result_all_set.DERControlBase_.opModImpLimW.multiplier == -DOE_DECIMAL_PLACES
-    assert result_all_set.DERControlBase_.opModExpLimW.multiplier == -DOE_DECIMAL_PLACES
-    assert result_all_set.DERControlBase_.opModImpLimW.value == int(
-        doe_default.import_limit_active_watts * DOE_DECIMAL_POWER
-    )
-    assert result_all_set.DERControlBase_.opModExpLimW.value == int(
-        doe_default.export_limit_active_watts * DOE_DECIMAL_POWER
-    )
+    assert result_all_set.DERControlBase_.opModImpLimW is None
+    assert result_all_set.DERControlBase_.opModExpLimW is None
+    assert result_all_set.DERControlBase_.opModLoadLimW is None
+    assert result_all_set.DERControlBase_.opModGenLimW is None
+    assert result_all_set.setGradW is None
 
 
 def test_map_derc_to_list_response():

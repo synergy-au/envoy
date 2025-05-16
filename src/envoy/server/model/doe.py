@@ -6,12 +6,12 @@ from sqlalchemy import DECIMAL, BigInteger, DateTime, ForeignKey, Index, UniqueC
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from envoy.server.model.base import Base
+from envoy.server.model.constants import DOE_DECIMAL_PLACES
 from envoy.server.model.site import Site
 
-DOE_DECIMAL_PLACES = 2
-DOE_DECIMAL_POWER = pow(10, DOE_DECIMAL_PLACES)
 
-
+# TODO: Rename this and related archive to SiteControl. These entities will eventually hold more than
+# just DOE related information, e.g. set-point control, etc.
 class DynamicOperatingEnvelope(Base):
     """Represents a dynamic operating envelope for a site at a particular time interval"""
 
@@ -35,7 +35,7 @@ class DynamicOperatingEnvelope(Base):
     )  # Constraint on imported active power
     export_limit_watts: Mapped[Decimal] = mapped_column(
         DECIMAL(16, DOE_DECIMAL_PLACES)
-    )  # Constraint on exported active/reactive power
+    )  # Constraint on exported active power TODO: rename to ..active_watts
 
     site: Mapped["Site"] = relationship(lazy="raise")
 
@@ -46,6 +46,16 @@ class DynamicOperatingEnvelope(Base):
     # postgres function date_add(start_time, duration_seconds * interval '1 sec', 'UTC'). Unfortunately this was only
     # added in postgres 16 so we'd be cutting off large chunks of postgresql servers - instead we just manually populate
     # this as we go.
+
+    # NOTE: We've decided to include these 'non-DOE' related fields (that map to DERControl elements) here and
+    # eventually generalise this to capture specifically the DERControl that are of interest to CSIP-AUS (i.e. not
+    # necessarily everything in core IEEE2030.5).
+    generation_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
+    )
+    load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True)
+    set_energized: Mapped[Optional[bool]] = mapped_column(nullable=True)
+    set_connected: Mapped[Optional[bool]] = mapped_column(nullable=True)
 
     __table_args__ = (
         UniqueConstraint("start_time", "site_id", name="start_time_site_id_uc"),

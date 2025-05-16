@@ -1,14 +1,18 @@
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Optional
 
 
+# TODO: rename to DefaultSiteControlConfiguration as part of DOE->SiteControl refactor.
 @dataclass
 class DefaultDoeConfiguration:
-    """The globally configured Default dynamic operating envelope (DOE) values to be used in lieu of an active DOE
+    """The globally configured Default dynamic operating envelope (DOE) values to be used as a fallback if
+    one is/are not defined for a particular site.
 
-    This is to support a single static set of values - at some point this will likely be deprecated by something
-    in the database
     """
 
-    import_limit_active_watts: Decimal
-    export_limit_active_watts: Decimal
+    import_limit_active_watts: Optional[Decimal] = None
+    export_limit_active_watts: Optional[Decimal] = None
+    generation_limit_active_watts: Optional[Decimal] = None
+    load_limit_active_watts: Optional[Decimal] = None
+    ramp_rate_percent_per_second: Optional[int] = None
