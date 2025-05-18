@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from decimal import Decimal
+from itertools import product
 from typing import Optional
 
 import pytest
@@ -7,7 +9,13 @@ from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
 from sqlalchemy.exc import InvalidRequestError
 
-from envoy.admin.crud.site import count_all_site_groups, count_all_sites, select_all_site_groups, select_all_sites
+from envoy.admin.crud.site import (
+    count_all_site_groups,
+    count_all_sites,
+    select_all_site_groups,
+    select_all_sites,
+    select_single_site_no_scoping,
+)
 from envoy.server.api.request import MAX_LIMIT
 from envoy.server.model.site import (
     Site,
@@ -293,3 +301,83 @@ async def test_select_all_site_groups(
         assert all([isinstance(g[0], SiteGroup) for g in groups])
         assert all([isinstance(g[1], int) for g in groups])
         assert expected_id_count == [(sg.site_group_id, count) for sg, count in groups]
+
+
+@pytest.mark.parametrize("missing_site_id", [0, -1, 9999])
+@pytest.mark.anyio
+async def test_select_single_site_no_scoping_missing_site_ids(pg_base_config, missing_site_id: int):
+    async with generate_async_session(pg_base_config) as session:
+        for groups, der, site_default in product([True, False], [True, False], [True, False]):
+            assert (await select_single_site_no_scoping(session, missing_site_id, groups, der, site_default)) is None
+
+
+@pytest.mark.parametrize(
+    "site_id, expected_group_ids, expected_der_ids, expected_site_import_watts",
+    [
+        (1, [1, 2], (2, 1, 1, 1, 1), Decimal("10.10")),
+        (2, [1], (1, None, None, None, None), None),
+        (3, [1], None, Decimal("20.20")),
+        (4, [], None, None),
+        (5, [], None, None),
+        (6, [], None, None),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_single_site_no_scoping(
+    pg_base_config,
+    site_id,
+    expected_group_ids: list[int],
+    expected_der_ids: Optional[tuple[int, Optional[int], Optional[int], Optional[int], Optional[int]]],
+    expected_site_import_watts: Optional[Decimal],
+):
+    """
+    expected_der_ids: Tuple(DERId, DERAvailId, DERRatingId, DERSettingId, DERStatusId)"""
+
+    def der_to_expected_tuple(
+        ders: list[SiteDER],
+    ) -> Optional[tuple[int, Optional[int], Optional[int], Optional[int], Optional[int]]]:
+        """Returns Tuple(DERId, DERAvailId, DERRatingId, DERSettingId, DERStatusId)"""
+        if not ders:
+            return None
+
+        assert len(ders) == 1, "There should be ONLY be a single SiteDER per site "
+
+        return (
+            ders[0].site_der_id,
+            ders[0].site_der_availability.site_der_availability_id if ders[0].site_der_availability else None,
+            ders[0].site_der_rating.site_der_rating_id if ders[0].site_der_rating else None,
+            ders[0].site_der_setting.site_der_setting_id if ders[0].site_der_setting else None,
+            ders[0].site_der_status.site_der_status_id if ders[0].site_der_status else None,
+        )
+
+    for include_groups, include_der, include_site_default in product([True, False], [True, False], [True, False]):
+        async with generate_async_session(pg_base_config) as session:
+            site = await select_single_site_no_scoping(
+                session,
+                site_id,
+                include_groups=include_groups,
+                include_der=include_der,
+                include_site_default=include_site_default,
+            )
+
+            if include_groups:
+                assert expected_group_ids == [a.group.site_group_id for a in site.assignments]
+            else:
+                with pytest.raises(InvalidRequestError):
+                    assert len(site.assignments) == 0
+
+            if include_der:
+                assert expected_der_ids == der_to_expected_tuple(site.site_ders)
+            else:
+                with pytest.raises(InvalidRequestError):
+                    assert len(site.site_ders) == 0
+
+            if include_site_default:
+                assert expected_site_import_watts == (
+                    site.default_site_control.import_limit_active_watts
+                    if site.default_site_control is not None
+                    else None
+                )
+            else:
+                with pytest.raises(InvalidRequestError):
+                    assert site.default_site_control.default_site_control_id == 0
