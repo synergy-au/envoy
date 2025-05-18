@@ -18,6 +18,7 @@ from envoy.server.crud.doe import (
 )
 from envoy.server.crud.end_device import select_single_site_with_site_id, select_site_with_default_site_control
 from envoy.server.exception import NotFoundError
+from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.doe import (
     DERControlListSource,
@@ -50,8 +51,11 @@ class DERProgramManager:
         now = utc_now()
         total_does = await count_active_does_include_deleted(session, site, now, datetime.min)
 
+        # fetch runtime server config
+        config = await RuntimeServerConfigManager.fetch_current_config(session)
+
         # Note that the actual site_id is used to construct the response as it is required for the href
-        return DERProgramMapper.doe_program_list_response(scope, total_does, default_doe)
+        return DERProgramMapper.doe_program_list_response(scope, total_does, default_doe, config.derpl_pollrate_seconds)
 
     @staticmethod
     async def fetch_doe_program_for_scope(
@@ -83,7 +87,10 @@ class DERControlManager:
         if doe is None:
             return None
 
-        return DERControlMapper.map_to_response(scope, doe)
+        # fetch runtime server config
+        config = await RuntimeServerConfigManager.fetch_current_config(session)
+
+        return DERControlMapper.map_to_response(scope, doe, config.site_control_pow10_encoding)
 
     @staticmethod
     async def fetch_doe_controls_for_scope(
@@ -109,7 +116,13 @@ class DERControlManager:
             # Site isn't in scope - return empty list
             does = []
             total_count = 0
-        return DERControlMapper.map_to_list_response(scope, does, total_count, DERControlListSource.DER_CONTROL_LIST)
+
+        # fetch runtime server config
+        config = await RuntimeServerConfigManager.fetch_current_config(session)
+
+        return DERControlMapper.map_to_list_response(
+            scope, does, total_count, DERControlListSource.DER_CONTROL_LIST, config.site_control_pow10_encoding
+        )
 
     @staticmethod
     async def fetch_active_doe_controls_for_scope(
@@ -127,8 +140,12 @@ class DERControlManager:
             session, scope.aggregator_id, scope.site_id, now, start, changed_after, limit
         )
         total_count = await count_does_at_timestamp(session, scope.aggregator_id, scope.site_id, now, changed_after)
+
+        # fetch runtime server config
+        config = await RuntimeServerConfigManager.fetch_current_config(session)
+
         return DERControlMapper.map_to_list_response(
-            scope, does, total_count, DERControlListSource.ACTIVE_DER_CONTROL_LIST
+            scope, does, total_count, DERControlListSource.ACTIVE_DER_CONTROL_LIST, config.site_control_pow10_encoding
         )
 
     @staticmethod
@@ -146,7 +163,11 @@ class DERControlManager:
         default_site_control = DERControlManager._resolve_default_site_control(default_doe, site.default_site_control)
         if default_site_control is None:
             raise NotFoundError(f"There is no default DefaultDERControl configured for site {scope.site_id}")
-        return DERControlMapper.map_to_default_response(scope, default_site_control)
+
+        # fetch runtime server config
+        config = await RuntimeServerConfigManager.fetch_current_config(session)
+
+        return DERControlMapper.map_to_default_response(scope, default_site_control, config.site_control_pow10_encoding)
 
     @staticmethod
     def _resolve_default_site_control(

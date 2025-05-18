@@ -31,6 +31,7 @@ from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.manager.der_constants import PUBLIC_SITE_DER_ID
 from envoy.server.mapper.constants import PricingReadingType
 from envoy.server.mapper.sep2.pub_sub import NotificationType, SubscriptionMapper
+from envoy.server.model.config.server import RuntimeServerConfig
 from envoy.server.model.doe import DynamicOperatingEnvelope
 from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
@@ -453,7 +454,14 @@ def test_entities_to_notification_unknown_resource():
     """We catch bad SubscriptionResource with our own error"""
     with pytest.raises(NotificationError):
         entities_to_notification(
-            9999, Subscription(resource_type=9999), (1, 2, 3), None, NotificationType.ENTITY_CHANGED, [], None
+            9999,
+            Subscription(resource_type=9999),
+            (1, 2, 3),
+            None,
+            NotificationType.ENTITY_CHANGED,
+            [],
+            None,
+            RuntimeServerConfig(),
         )
 
 
@@ -566,6 +574,7 @@ def test_entities_to_notification_sites(  # noqa: C901
         PricingReadingType.EXPORT_ACTIVE_POWER_KWH if resource == SubscriptionResource.TARIFF_GENERATED_RATE else None
     )
     batch_key = get_batch_key(resource, generate_class_instance(entity_class, generate_relationships=True))
+    config = RuntimeServerConfig()
 
     # Try for various lengths (empty, singular, many)
     for entity_length in [0, 1, 3]:
@@ -579,7 +588,7 @@ def test_entities_to_notification_sites(  # noqa: C901
                 entities.append(e)
 
             notification = entities_to_notification(
-                resource, sub, batch_key, href_prefix, notification_type, entities, pricing_reading_type
+                resource, sub, batch_key, href_prefix, notification_type, entities, pricing_reading_type, config
             )
             assert isinstance(notification, Notification)
             assert notification.subscribedResource.startswith(href_prefix)
@@ -650,7 +659,9 @@ async def test_fetch_batched_entities_bad_resource():
 @mock.patch("envoy.notification.task.check.entities_serviced_by_subscription")
 @mock.patch("envoy.notification.task.check.select_subscriptions_for_resource")
 @mock.patch("envoy.notification.task.check.fetch_batched_entities")
+@mock.patch("envoy.notification.task.check.RuntimeServerConfigManager.fetch_current_config")
 async def test_check_db_change_or_delete(
+    mock_fetch_current_config: mock.MagicMock,
     mock_fetch_batched_entities: mock.MagicMock,
     mock_select_subscriptions_for_resource: mock.MagicMock,
     mock_entities_serviced_by_subscription: mock.MagicMock,
@@ -703,6 +714,10 @@ async def test_check_db_change_or_delete(
             return (e for e in entities)
 
     mock_entities_serviced_by_subscription.side_effect = side_effect_entities_serviced_by_subscription
+
+    # Create runtime server config
+    config: RuntimeServerConfig = generate_class_instance(RuntimeServerConfig)
+    mock_fetch_current_config.return_value = config
 
     #
     # ACT
@@ -788,7 +803,9 @@ async def test_check_db_change_or_delete(
 @mock.patch("envoy.notification.task.check.entities_serviced_by_subscription")
 @mock.patch("envoy.notification.task.check.select_subscriptions_for_resource")
 @mock.patch("envoy.notification.task.check.fetch_batched_entities")
+@mock.patch("envoy.notification.task.check.RuntimeServerConfigManager.fetch_current_config")
 async def test_check_db_change_or_delete_rates(
+    mock_fetch_current_config: mock.MagicMock,
     mock_fetch_batched_entities: mock.MagicMock,
     mock_select_subscriptions_for_resource: mock.MagicMock,
     mock_entities_serviced_by_subscription: mock.MagicMock,
@@ -827,6 +844,10 @@ async def test_check_db_change_or_delete_rates(
 
     # Configure what entities are serviced by what subscription
     mock_entities_serviced_by_subscription.return_value = (e for e in [rate1, rate2])
+
+    # Create runtime server config
+    config: RuntimeServerConfig = generate_class_instance(RuntimeServerConfig)
+    mock_fetch_current_config.return_value = config
 
     #
     # ACT
