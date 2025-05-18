@@ -42,7 +42,7 @@ from tests.integration.response import (
     read_response_body_string,
 )
 
-DOE_HREF = response_set_type_to_href(ResponseSetType.DYNAMIC_OPERATING_ENVELOPES)  # Shorthand for brevity
+DOE_HREF = response_set_type_to_href(ResponseSetType.SITE_CONTROLS)  # Shorthand for brevity
 RATE_HREF = response_set_type_to_href(ResponseSetType.TARIFF_GENERATED_RATES)  # Shorthand for brevity
 TEST_SCOPE = generate_class_instance(BaseRequestScope, href_prefix=None, iana_pen=TEST_IANA_PEN)
 
@@ -236,6 +236,7 @@ async def test_get_response_for_device_cert(
         await session.execute(
             insert(DynamicOperatingEnvelope).values(
                 dynamic_operating_envelope_id=101,
+                site_control_group_id=1,
                 site_id=5,
                 calculation_log_id=None,
                 changed_time=datetime(2025, 1, 2, tzinfo=timezone.utc),
@@ -411,6 +412,7 @@ async def test_get_response_list_pagination_for_device_cert(
         await session.execute(
             insert(DynamicOperatingEnvelope).values(
                 dynamic_operating_envelope_id=101,
+                site_control_group_id=1,
                 site_id=5,
                 calculation_log_id=None,
                 changed_time=datetime(2025, 1, 2, tzinfo=timezone.utc),

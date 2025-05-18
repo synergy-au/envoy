@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import Optional
 
 from envoy_schema.server.schema.sep2.der import (
     DER,
@@ -20,7 +19,6 @@ from envoy.server.exception import NotFoundError
 from envoy.server.manager.der_constants import PUBLIC_SITE_DER_ID
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
-from envoy.server.mapper.csip_aus.doe import DOE_PROGRAM_ID
 from envoy.server.mapper.sep2.der import (
     DERAvailabilityMapper,
     DERCapabilityMapper,
@@ -76,7 +74,7 @@ class DERManager:
         site_der.site_der_id = PUBLIC_SITE_DER_ID
 
         # Manually filter - we are forcing our single DER into a simple list
-        ders: list[tuple[SiteDER, Optional[str]]]
+        ders: list[SiteDER]
         total: int
         if after > site_der.changed_time:
             ders = []
@@ -85,7 +83,7 @@ class DERManager:
             ders = []
             total = 1
         else:
-            ders = [(site_der, DOE_PROGRAM_ID)]
+            ders = [site_der]
             total = 1
 
         # fetch runtime server config
@@ -107,7 +105,7 @@ class DERManager:
         site_der = await site_der_for_site(session, aggregator_id=scope.aggregator_id, site_id=scope.site_id)
         site_der.site_der_id = PUBLIC_SITE_DER_ID
 
-        return DERMapper.map_to_response(scope, site_der, DOE_PROGRAM_ID)
+        return DERMapper.map_to_response(scope, site_der, None)
 
 
 class DERCapabilityManager:
