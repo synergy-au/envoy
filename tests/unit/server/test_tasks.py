@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from asyncio import AbstractEventLoop
 from typing import Any, NoReturn
 
 import pytest
@@ -16,15 +15,6 @@ from _pytest.logging import LogCaptureFixture
 from envoy.server.tasks import repeat_every
 
 logging.basicConfig(level=logging.INFO)
-
-
-def ignore_exception(_loop: AbstractEventLoop, _context: dict[str, Any]) -> None:
-    pass
-
-
-@pytest.fixture(autouse=True)
-def setup_event_loop(event_loop: AbstractEventLoop) -> None:
-    event_loop.set_exception_handler(ignore_exception)
 
 
 @pytest.mark.asyncio
