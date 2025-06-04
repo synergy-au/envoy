@@ -67,7 +67,7 @@ dependencies = [
     "taskiq!=0.11.5,!=0.11.6",    # Known compatibiity issue with pydantic
     "taskiq-aio-pika",
     "parse",
-    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@1-add-storage-extension-xsd-updates",
+    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git",
 ]
 
 [project.optional-dependencies]
