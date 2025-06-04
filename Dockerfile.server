@@ -1,4 +1,4 @@
-FROM tiangolo/uvicorn-gunicorn-fastapi:python3.11
+FROM tiangolo/uvicorn-gunicorn-fastapi:python3.11-slim
 
 # Copy app + dependencies
 COPY ./src /app/src
@@ -6,6 +6,7 @@ COPY ./pyproject.toml /app/pyproject.toml
 COPY ./setup.cfg /app/setup.cfg
 
 # Install app / dependencies
+RUN apt-get update && apt-get install git -y
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -e /app
 
 # Setup execution environment
