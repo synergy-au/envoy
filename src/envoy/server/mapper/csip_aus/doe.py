@@ -123,6 +123,11 @@ class DERControlMapper:
                     ),
                     opModEnergize=doe.set_energized if doe.set_energized is not None else None,
                     opModConnect=doe.set_connected if doe.set_connected is not None else None,
+                    opModStorageTargetW=(
+                        DERControlMapper.map_to_active_power(doe.storage_target_active_watts, pow10_multiplier)
+                        if doe.storage_target_active_watts is not None
+                        else None
+                    ),
                 ),
             }
         )
@@ -154,6 +159,11 @@ class DERControlMapper:
                 opModGenLimW=(
                     DERControlMapper.map_to_active_power(default_doe.generation_limit_active_watts, pow10_multipier)
                     if default_doe.generation_limit_active_watts is not None
+                    else None
+                ),
+                opModStorageTargetW=(
+                    DERControlMapper.map_to_active_power(default_doe.storage_target_active_watts, pow10_multipier)
+                    if default_doe.storage_target_active_watts is not None
                     else None
                 ),
             ),
