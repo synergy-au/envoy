@@ -158,9 +158,7 @@ class SiteMapper:
             max_wh=_extract_failover_pow10_value(rating, setting, "max_wh_value", "max_wh_multiplier"),
             v_nom=_extract_failover_pow10_value(rating, setting, "v_nom_value", "v_nom_multiplier"),
             min_wh=(
-                pow10_to_decimal_value(setting.min_wh_value, setting.min_wh_multiplier)
-                if setting is not None
-                else None
+                pow10_to_decimal_value(setting.min_wh_value, setting.min_wh_multiplier) if setting is not None else None
             ),
         )
 
