@@ -9,6 +9,7 @@ from envoy_schema.server.schema.sep2.der import (
     DERControlType,
     DERType,
     DOESupportedMode,
+    VPPSupportedMode,
     InverterStatusType,
     LocalControlModeStatusType,
     NormalCategoryType,
@@ -213,6 +214,7 @@ class SiteDERRating(Base):
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     der_type: Mapped[DERType] = mapped_column(INTEGER)
     doe_modes_supported: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+    vpp_modes_supported: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
     site_der: Mapped["SiteDER"] = relationship(back_populates="site_der_rating", lazy="raise", single_parent=True)
     __table_args__ = (UniqueConstraint("site_der_id"),)  # Only one SiteDERRating allowed per SiteDER)
@@ -271,6 +273,8 @@ class SiteDERSetting(Base):
     min_pf_under_excited_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     soft_grad_w: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
@@ -279,6 +283,7 @@ class SiteDERSetting(Base):
     v_ref_ofs_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_ref_ofs_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     doe_modes_enabled: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+    vpp_modes_enabled: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
     site_der: Mapped["SiteDER"] = relationship(back_populates="site_der_setting", lazy="raise", single_parent=True)
     __table_args__ = (UniqueConstraint("site_der_id"),)  # Only one SiteDERSetting allowed per SiteDER)
@@ -406,5 +411,10 @@ class DefaultSiteControl(Base):
     )
     load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True)
     ramp_rate_percent_per_second: Mapped[Optional[int]] = mapped_column(nullable=True)
+
+    # Storage extension
+    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
+    )
 
     site: Mapped["Site"] = relationship(back_populates="default_site_control", lazy="raise")
