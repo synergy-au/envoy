@@ -102,11 +102,11 @@ async def test_get_update_server_config(admin_client_auth: AsyncClient, pg_base_
 @pytest.mark.parametrize(
     "site_id, expected",
     [
-        (1, (Decimal("10.10"), Decimal("9.99"), Decimal("8.88"), Decimal("7.77"))),
-        (2, (None, None, None, None)),
-        (3, (Decimal("20.20"), Decimal("19.19"), Decimal("18.18"), Decimal("17.17"))),
-        (5, (None, None, None, None)),
-        (6, (None, None, None, None)),
+        (1, (Decimal("10.10"), Decimal("9.99"), Decimal("8.88"), Decimal("7.77"), Decimal("5.55"))),
+        (2, (None, None, None, None, None)),
+        (3, (Decimal("20.20"), Decimal("19.19"), Decimal("18.18"), Decimal("17.17"), Decimal("15.15"))),
+        (5, (None, None, None, None, None)),
+        (6, (None, None, None, None, None)),
         (99, None),
     ],
 )
@@ -126,6 +126,7 @@ async def test_get_and_update_site_control_default(
             config.server_default_export_limit_watts,
             config.server_default_generation_limit_watts,
             config.server_default_load_limit_watts,
+            config.server_default_storage_target_watts,
         )
 
     # now do an update for certain fields
@@ -135,6 +136,7 @@ async def test_get_and_update_site_control_default(
         generation_limit_watts=None,
         load_limit_watts=None,
         ramp_rate_percent_per_second=None,
+        storage_target_watts=None,
     )
     resp = await admin_client_auth.post(
         SiteControlDefaultConfigUri.format(site_id=site_id), content=config_request.model_dump_json()

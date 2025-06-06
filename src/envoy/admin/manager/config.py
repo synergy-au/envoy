@@ -148,6 +148,7 @@ class ConfigManager:
             server_default_export_limit_watts=default_config.export_limit_active_watts,
             server_default_generation_limit_watts=default_config.generation_limit_active_watts,
             server_default_load_limit_watts=default_config.load_limit_active_watts,
+            server_default_storage_target_watts=default_config.storage_target_active_watts,
             changed_time=default_config.changed_time,
             created_time=default_config.created_time,
         )
