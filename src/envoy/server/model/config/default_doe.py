@@ -8,7 +8,6 @@ from typing import Optional
 class DefaultDoeConfiguration:
     """The globally configured Default dynamic operating envelope (DOE) values to be used as a fallback if
     one is/are not defined for a particular site.
-
     """
 
     import_limit_active_watts: Optional[Decimal] = None
@@ -16,3 +15,4 @@ class DefaultDoeConfiguration:
     generation_limit_active_watts: Optional[Decimal] = None
     load_limit_active_watts: Optional[Decimal] = None
     ramp_rate_percent_per_second: Optional[int] = None
+    storage_target_active_watts: Optional[Decimal] = None
