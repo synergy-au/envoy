@@ -55,11 +55,6 @@ class ArchiveDynamicOperatingEnvelope(ArchiveBase):
     set_energized: Mapped[Optional[bool]] = mapped_column(nullable=True)
     set_connected: Mapped[Optional[bool]] = mapped_column(nullable=True)
 
-    # Storage extension
-    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, original_models.doe.DOE_DECIMAL_PLACES), nullable=True
-    )
-
     __table_args__ = (
         Index(
             "archive_doe_site_control_group_id_end_time_deleted_time_site_id",

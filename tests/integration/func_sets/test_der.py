@@ -319,7 +319,6 @@ async def test_roundtrip_upsert_der_capability(
     capability: DERCapability = generate_class_instance(DERCapability, seed=3001, generate_relationships=True)
     capability.modesSupported = "0"
     capability.doeModesSupported = "3"
-    capability.vppModesSupported = "1"
     response = await client.put(
         capability_uri,
         headers=valid_headers,
@@ -377,7 +376,6 @@ async def test_roundtrip_upsert_der_setting(
     settings: DERSettings = generate_class_instance(DERSettings, seed=4001, generate_relationships=True)
     settings.modesEnabled = "0"
     settings.doeModesEnabled = "4"
-    settings.vppModesEnabled = "1"
     response = await client.put(
         setting_uri,
         headers=valid_headers,

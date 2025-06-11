@@ -91,11 +91,6 @@ class DynamicOperatingEnvelope(Base):
     set_energized: Mapped[Optional[bool]] = mapped_column(nullable=True)
     set_connected: Mapped[Optional[bool]] = mapped_column(nullable=True)
 
-    # Storage extension
-    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
-    )
-
     site: Mapped["Site"] = relationship(lazy="raise")
 
     site_control_group: Mapped["SiteControlGroup"] = relationship(

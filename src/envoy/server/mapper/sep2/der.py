@@ -14,7 +14,6 @@ from envoy_schema.server.schema.sep2.der import (
     DERSettings,
     DERStatus,
     DOESupportedMode,
-    VPPSupportedMode,
 )
 from envoy_schema.server.schema.sep2.identification import Link
 from envoy_schema.server.schema.sep2.types import SubscribableType
@@ -394,7 +393,6 @@ class DERCapabilityMapper:
                 "rtgVNom": get_value_multiplier(der_rating.v_nom_value, der_rating.v_nom_multiplier),
                 "type_": der_rating.der_type,
                 "doeModesSupported": to_hex_binary(der_rating.doe_modes_supported),
-                "vppModesSupported": to_hex_binary(der_rating.vpp_modes_supported),
             }
         )
 
@@ -405,7 +403,6 @@ class DERCapabilityMapper:
             modes_supported=DERControlType(int(der_cap.modesSupported, 16)),
             der_type=der_cap.type_,
             doe_modes_supported=DOESupportedMode(int(der_cap.doeModesSupported, 16)),
-            vpp_modes_supported=VPPSupportedMode(int(der_cap.vppModesSupported, 16)),
             changed_time=changed_time,
             normal_category=der_cap.rtgNormalCategory,
             abnormal_category=der_cap.rtgAbnormalCategory,
@@ -500,14 +497,12 @@ class DERSettingMapper:
                     value_name="displacement",
                 ),
                 "setMinV": get_value_multiplier(der_setting.min_v_value, der_setting.min_v_multiplier),
-                "setMinWh": get_value_multiplier(der_setting.min_wh_value, der_setting.min_wh_multiplier),
                 "setSoftGradW": der_setting.soft_grad_w,
                 "setVNom": get_value_multiplier(der_setting.v_nom_value, der_setting.v_nom_multiplier),
                 "setVRef": get_value_multiplier(der_setting.v_ref_value, der_setting.v_ref_multiplier),
                 "setVRefOfs": get_value_multiplier(der_setting.v_ref_ofs_value, der_setting.v_ref_ofs_multiplier),
                 "updatedTime": int(der_setting.changed_time.timestamp()),
                 "doeModesEnabled": to_hex_binary(der_setting.doe_modes_enabled),
-                "vppModesEnabled": to_hex_binary(der_setting.vpp_modes_enabled),
             }
         )
 
@@ -518,8 +513,6 @@ class DERSettingMapper:
             modes_enabled = DERControlType(int(der_setting.modesEnabled, 16))
         if der_setting.doeModesEnabled:
             doe_modes_enabled = DERControlType(int(der_setting.doeModesEnabled, 16))
-        if der_setting.vppModesEnabled:
-            vpp_modes_enabled = DERControlType(int(der_setting.vppModesEnabled, 16))
 
         m = SiteDERSetting(
             modes_enabled=modes_enabled,
@@ -533,7 +526,6 @@ class DERSettingMapper:
             grad_w=der_setting.setGradW,
             soft_grad_w=der_setting.setSoftGradW,
             doe_modes_enabled=doe_modes_enabled,
-            vpp_modes_enabled=vpp_modes_enabled,
             changed_time=changed_time,
         )
         (m.max_a_value, m.max_a_multiplier) = set_value_multiplier(der_setting.setMaxA)
@@ -566,6 +558,5 @@ class DERSettingMapper:
         (m.v_nom_value, m.v_nom_multiplier) = set_value_multiplier(der_setting.setVNom)
         (m.v_ref_value, m.v_ref_multiplier) = set_value_multiplier(der_setting.setVRef)
         (m.v_ref_ofs_value, m.v_ref_ofs_multiplier) = set_value_multiplier(der_setting.setVRefOfs)
-        (m.min_wh_value, m.min_wh_multiplier) = set_value_multiplier(der_setting.setMinWh)
 
         return m

@@ -9,7 +9,6 @@ from envoy_schema.server.schema.sep2.der import (
     DERControlType,
     DERType,
     DOESupportedMode,
-    VPPSupportedMode,
     InverterStatusType,
     LocalControlModeStatusType,
     NormalCategoryType,
@@ -106,7 +105,6 @@ class ArchiveSiteDERRating(ArchiveBase):
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     der_type: Mapped[DERType] = mapped_column(INTEGER)
     doe_modes_supported: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
-    vpp_modes_supported: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
 
 class ArchiveSiteDERSetting(ArchiveBase):
@@ -156,8 +154,6 @@ class ArchiveSiteDERSetting(ArchiveBase):
     min_pf_under_excited_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     soft_grad_w: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
@@ -166,7 +162,6 @@ class ArchiveSiteDERSetting(ArchiveBase):
     v_ref_ofs_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_ref_ofs_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     doe_modes_enabled: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
-    vpp_modes_enabled: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
 
 class ArchiveSiteDERAvailability(ArchiveBase):
@@ -244,8 +239,3 @@ class ArchiveDefaultSiteControl(ArchiveBase):
     ramp_rate_percent_per_second: Mapped[Optional[int]] = mapped_column(
         nullable=True
     )  # Constraint on exported active/reactive power
-
-    # Storage extension
-    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )
