@@ -6,7 +6,7 @@ from envoy_schema.admin.schema.site import DERAvailability, DERConfiguration, DE
 from envoy_schema.admin.schema.site import SiteGroup as AdminSiteGroup
 from envoy_schema.admin.schema.site import SitePageResponse, SiteResponse
 from envoy_schema.admin.schema.site_group import SiteGroupPageResponse, SiteGroupResponse
-from envoy_schema.server.schema.sep2.der import DERType, DOESupportedMode
+from envoy_schema.server.schema.sep2.der import DERType, DOESupportedMode, VPPSupportedMode
 
 from envoy.server.mapper.common import pow10_to_decimal_value
 from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus, SiteGroup
@@ -113,6 +113,12 @@ class SiteMapper:
         elif rating and rating.doe_modes_supported is not None:
             doe_modes = rating.doe_modes_supported
 
+        vpp_modes: VPPSupportedMode | None = None
+        if setting and setting.vpp_modes_enabled is not None:
+            vpp_modes = setting.vpp_modes_enabled
+        elif rating and rating.vpp_modes_supported is not None:
+            vpp_modes = rating.vpp_modes_supported
+
         max_w = _extract_failover_pow10_value(rating, setting, "max_w_value", "max_w_multiplier")
         if max_w is None:
             # This should never happen as max_w is mandatory on setting and rating
@@ -125,6 +131,7 @@ class SiteMapper:
             modes_supported=modes_supported,
             type=rating.der_type if rating else DERType.NOT_APPLICABLE,
             doe_modes_supported=doe_modes,
+            vpp_modes_supported=vpp_modes,
             max_w=max_w,
             # Optional
             abnormal_category=rating.abnormal_category if rating else None,
@@ -150,6 +157,9 @@ class SiteMapper:
             max_var_neg=_extract_failover_pow10_value(rating, setting, "max_var_neg_value", "max_var_neg_multiplier"),
             max_wh=_extract_failover_pow10_value(rating, setting, "max_wh_value", "max_wh_multiplier"),
             v_nom=_extract_failover_pow10_value(rating, setting, "v_nom_value", "v_nom_multiplier"),
+            min_wh=(
+                pow10_to_decimal_value(setting.min_wh_value, setting.min_wh_multiplier) if setting is not None else None
+            ),
         )
 
     @staticmethod
