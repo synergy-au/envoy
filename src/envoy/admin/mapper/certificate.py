@@ -1,7 +1,5 @@
 from typing import Iterable
 
-from datetime import datetime
-
 from envoy_schema.admin.schema.certificate import CertificateResponse, CertificatePageResponse
 
 from envoy.server import model
