@@ -35,9 +35,7 @@ async def test_add_many_certficates_for_aggregator_existing_cert_mocked(
 
 
 @pytest.mark.anyio
-async def test_add_many_certficates_for_aggregator_existing_cert(
-    pg_base_config: psycopg.Connection
-) -> None:
+async def test_add_many_certficates_for_aggregator_existing_cert(pg_base_config: psycopg.Connection) -> None:
     """Testing to make sure all calls expected are being made for an existing certificate"""
     async with pg_fixtures.generate_async_session(pg_base_config) as session:
         prior_assigns_q = await session.execute(sa.select(AggregatorCertificateAssignment))
