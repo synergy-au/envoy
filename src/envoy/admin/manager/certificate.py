@@ -6,7 +6,6 @@ from envoy_schema.admin.schema.certificate import CertificatePageResponse, Certi
 from envoy.admin import crud
 from envoy.server import crud as server_crud
 from envoy.admin import mapper
-from envoy.server.model.base import Certificate
 
 
 class CertificateManager:

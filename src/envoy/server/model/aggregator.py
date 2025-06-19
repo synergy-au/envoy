@@ -39,9 +39,7 @@ class AggregatorCertificateAssignment(Base):
     certificate_id: Mapped[int] = mapped_column(ForeignKey("certificate.certificate_id"), nullable=False)
     aggregator_id: Mapped[int] = mapped_column(ForeignKey("aggregator.aggregator_id"), nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("assignment_id", "certificate_id", name=f"uq_{__tablename__}_cert_id_agg_id"),
-    )
+    __table_args__ = (UniqueConstraint("assignment_id", "certificate_id", name=f"uq_{__tablename__}_cert_id_agg_id"),)
 
 
 class AggregatorDomain(Base):
