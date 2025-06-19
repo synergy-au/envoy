@@ -1,16 +1,23 @@
 import json
+import datetime as dt
 from http import HTTPStatus
 from typing import Optional
 
 import pytest
 import psycopg
+import sqlalchemy as sa
 from assertical.fixtures.postgres import generate_async_session
 from envoy_schema.admin.schema.aggregator import AggregatorResponse, AggregatorPageResponse, AggregatorDomain
-from envoy_schema.admin.schema.certificate import CertificateResponse, CertificatePageResponse
+from envoy_schema.admin.schema.certificate import (
+    CertificateResponse,
+    CertificatePageResponse,
+    CertificateAssignmentRequest,
+)
 from envoy_schema.admin.schema import uri
 from httpx import AsyncClient
 
 from envoy.admin import crud
+from envoy.server.model import AggregatorCertificateAssignment
 from tests.integration import response
 
 
@@ -152,3 +159,32 @@ async def test_get_aggregator_certificates(
         assert cert_page.start == start
 
     assert [a.certificate_id for a in cert_page.certificates] == expected_cert_ids
+
+
+@pytest.mark.anyio
+async def test_assign_certificates_to_aggregator(admin_client_auth: AsyncClient, pg_base_config) -> None:
+    """Testing of the '/aggregator/{agg_id}/certificate' endpoint using POST"""
+    async with generate_async_session(pg_base_config) as session:
+        certs = [CertificateAssignmentRequest(certificate_id=4)]
+        content = ",".join((c.model_dump_json() for c in certs))
+        res_post = await admin_client_auth.post(
+            uri.AggregatorCertificateListUri.format(aggregator_id=1), content=f"[{content}]"
+        )
+
+        assert res_post.status_code == HTTPStatus.CREATED
+
+        # Ensure new entry in DB
+        all_agg_cert = await session.execute(sa.select(AggregatorCertificateAssignment))
+        assert len(all_agg_cert.scalars().all()) > 5
+
+        res_get = await admin_client_auth.get(
+            uri.AggregatorCertificateListUri.format(aggregator_id=1) + _build_query_string(0, 500)
+        )
+        assert res_get.status_code == HTTPStatus.OK
+
+        body = response.read_response_body_string(res_get)
+        assert len(body) > 0
+        cert_page: CertificatePageResponse = CertificatePageResponse.model_validate_json(body)
+
+        assert len(cert_page.certificates) == 4
+        assert 4 in [c.certificate_id for c in cert_page.certificates]
