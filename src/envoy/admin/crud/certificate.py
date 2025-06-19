@@ -1,4 +1,4 @@
-from typing import Sequence, Iterable, Iterator
+from typing import Sequence, Iterable
 
 import itertools
 
