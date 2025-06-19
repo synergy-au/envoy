@@ -9,6 +9,7 @@ from envoy_schema.admin.schema.certificate import CertificateAssignmentRequest
 
 from envoy.admin.manager.certificate import CertificateManager
 from envoy.server.model.aggregator import AggregatorCertificateAssignment
+from envoy.admin import crud
 
 
 @pytest.mark.anyio
@@ -52,3 +53,6 @@ async def test_add_many_certficates_for_aggregator_existing_cert(
         after_assigns_q = await session.execute(sa.select(AggregatorCertificateAssignment))
         after_assigns = after_assigns_q.scalars().all()
         assert len(prior_assigns) < len(after_assigns)
+
+        all_certs = await crud.certificate.select_all_certificates(session, 0, 500)
+        assert "SOMEFAKELFDI" in [ac.lfdi for ac in all_certs]

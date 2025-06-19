@@ -72,9 +72,9 @@ class CertificateManager:
         # Ensure something to assign otherwise return
         peeker, producer = itertools.tee(all_ids)
         try:
-            test_cert_id = next(peeker)
-            all_peeker = [test_cert_id, *[p for p in peeker]]
+            next(peeker)
         except StopIteration:
             return
 
-        await crud.aggregator.assign_many_certificates(session, aggregator_id, all_peeker)
+        await crud.aggregator.assign_many_certificates(session, aggregator_id, producer)
+        await session.commit()
