@@ -165,7 +165,10 @@ async def test_get_aggregator_certificates(
 async def test_assign_certificates_to_aggregator(admin_client_auth: AsyncClient, pg_base_config) -> None:
     """Testing of the '/aggregator/{agg_id}/certificate' endpoint using POST"""
     async with generate_async_session(pg_base_config) as session:
-        certs = [CertificateAssignmentRequest(certificate_id=4)]
+        certs = [
+            CertificateAssignmentRequest(certificate_id=4),
+            CertificateAssignmentRequest(lfdi="SOMEFAKELFDI1", expiry=dt.datetime.now() + dt.timedelta(365)),
+        ]
         content = ",".join((c.model_dump_json() for c in certs))
         res_post = await admin_client_auth.post(
             uri.AggregatorCertificateListUri.format(aggregator_id=1), content=f"[{content}]"
@@ -173,7 +176,10 @@ async def test_assign_certificates_to_aggregator(admin_client_auth: AsyncClient,
 
         assert res_post.status_code == HTTPStatus.CREATED
 
-        # Ensure new entry in DB
+        # Ensure new entries in DB
+        all_certs = await crud.certificate.select_all_certificates(session, 0, 5000)
+        assert "SOMEFAKELFDI1" in [ac.lfdi for ac in all_certs]
+
         all_agg_cert = await session.execute(sa.select(AggregatorCertificateAssignment))
         assert len(all_agg_cert.scalars().all()) > 5
 
@@ -186,5 +192,36 @@ async def test_assign_certificates_to_aggregator(admin_client_auth: AsyncClient,
         assert len(body) > 0
         cert_page: CertificatePageResponse = CertificatePageResponse.model_validate_json(body)
 
-        assert len(cert_page.certificates) == 4
+        assert len(cert_page.certificates) == 3 + len(certs)
         assert 4 in [c.certificate_id for c in cert_page.certificates]
+        assert "SOMEFAKELFDI1" in [c.lfdi for c in cert_page.certificates]
+
+
+@pytest.mark.anyio
+async def test_assign_certificates_to_aggregator_bad_id(admin_client_auth: AsyncClient) -> None:
+    """Testing of the '/aggregator/{agg_id}/certificate' endpoint using POST with bad agg_id"""
+    certs = [
+        CertificateAssignmentRequest(certificate_id=4),
+        CertificateAssignmentRequest(lfdi="SOMEFAKELFDI1", expiry=dt.datetime.now() + dt.timedelta(365)),
+    ]
+    content = ",".join((c.model_dump_json() for c in certs))
+    res_post = await admin_client_auth.post(
+        uri.AggregatorCertificateListUri.format(aggregator_id=1111), content=f"[{content}]"
+    )
+
+    assert res_post.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.anyio
+async def test_assign_certificates_to_aggregator_bad_certificate_id(admin_client_auth: AsyncClient) -> None:
+    """Testing of the '/aggregator/{agg_id}/certificate' endpoint using POST with non existent certificate id"""
+    certs = [
+        CertificateAssignmentRequest(certificate_id=4444),
+        CertificateAssignmentRequest(lfdi="SOMEFAKELFDI1", expiry=dt.datetime.now() + dt.timedelta(365)),
+    ]
+    content = ",".join((c.model_dump_json() for c in certs))
+    res_post = await admin_client_auth.post(
+        uri.AggregatorCertificateListUri.format(aggregator_id=1), content=f"[{content}]"
+    )
+
+    assert res_post.status_code == HTTPStatus.BAD_REQUEST

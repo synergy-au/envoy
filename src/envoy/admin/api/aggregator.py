@@ -10,6 +10,7 @@ from fastapi_async_sqlalchemy import db
 
 from envoy.admin import manager
 from envoy.server.api import request
+from envoy.server.api import error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -107,13 +108,13 @@ async def assign_certificates_to_aggregator(
 
     Body:
         certificates: For each certificate to be assigned, it either needs an ID or LFDI supplied. Expiry will be
-            ignored for existing certificates.
+            ignored for existing certificates. New certificates require an expiry.
     """
     try:
         await manager.CertificateManager.add_many_certificates_for_aggregator(
             session=db.session, aggregator_id=aggregator_id, certs=certificates
         )
     except LookupError as err:
-        raise fastapi.HTTPException(http.HTTPStatus.NOT_FOUND, f"{err}")
+        raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.NOT_FOUND, f"{err}")
     except (ReferenceError, sqlalchemy.exc.IntegrityError) as err:
-        raise fastapi.HTTPException(http.HTTPStatus.BAD_REQUEST, f"{err}")
+        raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.BAD_REQUEST, f"{err}")
