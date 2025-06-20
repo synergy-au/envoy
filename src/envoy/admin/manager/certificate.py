@@ -51,7 +51,11 @@ class CertificateManager:
 
         # Filter existing
         existing = await crud.certificate.select_many_certificates_by_id_or_lfdi(session, mapped_certs)
-        existing_ids = [e.certificate_id for e in existing]
+        existing_ids: list[int] = []
+        existing_lfdis: list[str] = []
+        for e in existing:
+            existing_ids.append(e.certificate_id)
+            existing_lfdis.append(e.lfdi)
 
         # If an id doesn't exist then raise
         for mc_id in mapped_cert_ids:
@@ -59,14 +63,14 @@ class CertificateManager:
                 raise ReferenceError(f"Certificate with id {mc_id} does not exist")
 
         # Filter to be created
-        certs_to_create = [c for c in mapped_certs if c.certificate_id is None]
+        certs_to_create = [c for c in mapped_certs if c.certificate_id is None and c.lfdi not in existing_lfdis]
 
         # Create new ignore existing lfdis
         new_certs = await crud.certificate.create_many_certificates_on_conflict_do_nothing(session, certs_to_create)
 
         # Assign all to aggregator
         new_cert_ids = (c.certificate_id for c in new_certs)
-        all_ids = itertools.chain(new_cert_ids, mapped_cert_ids)
+        all_ids = itertools.chain(new_cert_ids, existing_ids)
 
         # Ensure something to assign otherwise return
         peeker, producer = itertools.tee(all_ids)
