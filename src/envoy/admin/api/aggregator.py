@@ -1,7 +1,8 @@
 import logging
 import http
+import sqlalchemy.exc
 
-from envoy_schema.admin.schema.certificate import CertificatePageResponse
+from envoy_schema.admin.schema.certificate import CertificatePageResponse, CertificateAssignmentRequest
 from envoy_schema.admin.schema.aggregator import AggregatorResponse, AggregatorPageResponse
 from envoy_schema.admin.schema import uri
 import fastapi
@@ -9,6 +10,7 @@ from fastapi_async_sqlalchemy import db
 
 from envoy.admin import manager
 from envoy.server.api import request
+from envoy.server.api import error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +87,34 @@ async def get_aggregator_certificates(
         raise fastapi.HTTPException(http.HTTPStatus.NOT_FOUND, f"Aggregator with ID {aggregator_id} not found")
 
     return certs
+
+
+@router.post(
+    uri.AggregatorCertificateListUri,
+    status_code=http.HTTPStatus.CREATED,
+    response_model=None,
+)
+async def assign_certificates_to_aggregator(
+    aggregator_id: int, certificates: list[CertificateAssignmentRequest]
+) -> None:
+    """Endpoint for assigning certificates to an aggregator.
+
+    Certificates are either created or just assigned. If there is a new expiry provided for
+    an existing certificate this will be ignored. To update certificate expiries please refer to the certificate
+    modify endpoint.
+
+    Path Params:
+        aggregator_id: ID of the aggregator that the certificates will be assigned
+
+    Body:
+        certificates: For each certificate to be assigned, it either needs an ID or LFDI supplied. Expiry will be
+            ignored for existing certificates. New certificates require an expiry.
+    """
+    try:
+        await manager.CertificateManager.add_many_certificates_for_aggregator(
+            session=db.session, aggregator_id=aggregator_id, certs=certificates
+        )
+    except LookupError as err:
+        raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.NOT_FOUND, f"{err}")
+    except (ReferenceError, sqlalchemy.exc.IntegrityError) as err:
+        raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.BAD_REQUEST, f"{err}")
