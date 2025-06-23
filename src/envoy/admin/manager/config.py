@@ -123,6 +123,9 @@ class ConfigManager:
             )
             site.default_site_control.ramp_rate_percent_per_second = ramp_rate_value
 
+        if request.storage_target_watts is not None:
+            site.default_site_control.storage_target_active_watts = request.storage_target_watts.value
+
         await session.commit()
 
         await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.DEFAULT_SITE_CONTROL, now)
