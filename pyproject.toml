@@ -67,7 +67,7 @@ dependencies = [
     "taskiq!=0.11.5,!=0.11.6",      # Known compatibiity issue with pydantic
     "taskiq-aio-pika",
     "parse",
-    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@17-create-certificate-request-models-and-uris-for-bulk-creation-and-assignment-to-aggregator"
+    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v0.17.2-rc1-synergy.0.2.0"
 ]
 
 [project.optional-dependencies]
