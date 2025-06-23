@@ -711,6 +711,7 @@ async def test_update_site_default_config_notification(
         generation_limit_watts=None,
         load_limit_watts=None,
         ramp_rate_percent_per_second=None,
+        storage_target_watts=None,
     )
 
     # Update default controls for site 1 and site 2

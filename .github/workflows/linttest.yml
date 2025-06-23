@@ -149,6 +149,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          apt update && apt install -y git
           pip install .
 
       - name: Upgrade

@@ -21,6 +21,7 @@ from envoy.server.model.site import DefaultSiteControl
                 load_limit_watts=UpdateDefaultValue(value=None),
                 generation_limit_watts=UpdateDefaultValue(value=None),
                 ramp_rate_percent_per_second=UpdateDefaultValue(value=None),
+                storage_target_watts=UpdateDefaultValue(value=None),
             ),
         ),
         (
@@ -31,6 +32,7 @@ from envoy.server.model.site import DefaultSiteControl
                 load_limit_watts=UpdateDefaultValue(value=Decimal(13)),
                 generation_limit_watts=UpdateDefaultValue(value=Decimal(14)),
                 ramp_rate_percent_per_second=UpdateDefaultValue(value=Decimal(15)),
+                storage_target_watts=UpdateDefaultValue(value=Decimal(16)),
             ),
         ),
     ],
@@ -56,5 +58,6 @@ async def test_update_site_control_default_all_vals_update(
         assert saved_result.generation_limit_active_watts == control_request.generation_limit_watts.value
         assert saved_result.load_limit_active_watts == control_request.load_limit_watts.value
         assert saved_result.ramp_rate_percent_per_second == control_request.ramp_rate_percent_per_second.value
+        assert saved_result.storage_target_active_watts == control_request.storage_target_watts.value
 
     mock_notify_changed_deleted_entities.assert_called_once()
