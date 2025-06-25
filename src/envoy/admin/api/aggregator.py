@@ -9,6 +9,7 @@ import fastapi
 from fastapi_async_sqlalchemy import db
 
 from envoy.admin import manager
+from envoy.server import exception
 from envoy.server.api import request
 from envoy.server.api import error_handler
 
@@ -114,7 +115,7 @@ async def assign_certificates_to_aggregator(
         await manager.CertificateManager.add_many_certificates_for_aggregator(
             session=db.session, aggregator_id=aggregator_id, certs=certificates
         )
-    except LookupError as err:
+    except exception.NotFoundError as err:
         raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.NOT_FOUND, f"{err}")
-    except (ReferenceError, sqlalchemy.exc.IntegrityError) as err:
+    except (exception.InvalidIdError, sqlalchemy.exc.IntegrityError) as err:
         raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.BAD_REQUEST, f"{err}")

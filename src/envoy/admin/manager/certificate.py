@@ -4,8 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy_schema.admin.schema.certificate import CertificatePageResponse, CertificateAssignmentRequest
 
 from envoy.admin import crud
-from envoy.server import crud as server_crud
 from envoy.admin import mapper
+from envoy.server import crud as server_crud
+from envoy.server import exception
 
 
 class CertificateManager:
@@ -38,12 +39,12 @@ class CertificateManager:
             certs: Partial/Full certs to be assigned. For new certs all fields excluding id must be supplied
 
         Raises:
-            LookupError: if aggregator id is invalid
-            ReferenceError: if a certificate id supplied doesn't already exist
+            NotFoundError: if aggregator id is invalid
+            InvalidIdError: if a certificate id supplied doesn't already exist
         """
         # Assess aggregator exists
         if not await server_crud.aggregator.select_aggregator(session, aggregator_id):
-            raise LookupError(f"Aggregator with id {aggregator_id} not found")
+            raise exception.NotFoundError(f"Aggregator with id {aggregator_id} not found")
 
         # Perform mapping
         mapped_certs = mapper.CertificateMapper.map_from_many_request(certs)
@@ -60,7 +61,7 @@ class CertificateManager:
         # If an id doesn't exist then raise
         for mc_id in mapped_cert_ids:
             if mc_id not in existing_ids:
-                raise ReferenceError(f"Certificate with id {mc_id} does not exist")
+                raise exception.InvalidIdError(f"Certificate with id {mc_id} does not exist")
 
         # Filter to be created
         certs_to_create = [c for c in mapped_certs if c.certificate_id is None and c.lfdi not in existing_lfdis]
