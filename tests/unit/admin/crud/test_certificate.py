@@ -39,12 +39,12 @@ async def test_select_certificate(pg_base_config: psycopg.Connection) -> None:
         cert_1 = await crud.certificate.select_certificate(session, 1)
         assert isinstance(cert_1, base.Certificate)
         assert cert_1.lfdi == "854d10a201ca99e5e90d3c3e1f9bc1c3bd075f3b"
-        assert cert_1.expiry == dt.datetime.fromisoformat("2037-01-01T01:02:03+00")
+        assert cert_1.expiry == dt.datetime.fromisoformat("2037-01-01T01:02:03+00:00")
 
         cert_2 = await crud.certificate.select_certificate(session, 2)
         assert isinstance(cert_2, base.Certificate)
         assert cert_2.lfdi == "403ba02aa36fa072c47eb3299daaafe94399adad"
-        assert cert_2.expiry == dt.datetime.fromisoformat("2037-01-01T02:03:04+00")
+        assert cert_2.expiry == dt.datetime.fromisoformat("2037-01-01T02:03:04+00:00")
 
         assert (await crud.certificate.select_certificate(session, 6)) is None
         assert (await crud.certificate.select_certificate(session, -1)) is None
