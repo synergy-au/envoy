@@ -91,7 +91,7 @@ async def test_unassign_many_certificates(
         (1, [4], [1, 2, 3], [4], [5]),
         (1, [6], [1, 2, 3], [4], [5]),
         (2, [4], [1, 2, 3], [], [5]),
-    ]
+    ],
 )
 @pytest.mark.anyio
 async def test_unassign_many_certificates_no_cross_contamination(
