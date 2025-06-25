@@ -9,6 +9,8 @@ from fastapi_async_sqlalchemy import db
 
 from envoy.admin import manager
 from envoy.server.api import request
+from envoy.server.api import error_handler
+from envoy.server import exception
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +87,25 @@ async def get_aggregator_certificates(
         raise fastapi.HTTPException(http.HTTPStatus.NOT_FOUND, f"Aggregator with ID {aggregator_id} not found")
 
     return certs
+
+
+@router.delete(
+    uri.AggregatorCertificateUri,
+    status_code=http.HTTPStatus.NO_CONTENT,
+    response_model=None,
+)
+async def delete_aggregator_certificate_assignment(aggregator_id: int, certificate_id: int) -> None:
+    """Deletion of an aggregator certificate assignment.
+
+    Does not delete the certificate entry itself.
+
+    Path Params:
+        aggregator_id: ID of aggregator
+        certificate_id: ID of certificate
+    """
+    try:
+        await manager.CertificateManager.unassign_certificate_for_aggregator(
+            db.session, aggregator_id, certificate_id
+        )
+    except exception.NotFoundError as err:
+        raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.NOT_FOUND, f"{err}")
