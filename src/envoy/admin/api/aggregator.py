@@ -104,8 +104,6 @@ async def delete_aggregator_certificate_assignment(aggregator_id: int, certifica
         certificate_id: ID of certificate
     """
     try:
-        await manager.CertificateManager.unassign_certificate_for_aggregator(
-            db.session, aggregator_id, certificate_id
-        )
+        await manager.CertificateManager.unassign_certificate_for_aggregator(db.session, aggregator_id, certificate_id)
     except exception.NotFoundError as err:
         raise error_handler.LoggedHttpException(logger, err, http.HTTPStatus.NOT_FOUND, f"{err}")

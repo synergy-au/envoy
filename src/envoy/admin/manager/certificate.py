@@ -24,7 +24,7 @@ class CertificateManager:
 
     @staticmethod
     async def unassign_certificate_for_aggregator(
-            session: AsyncSession, aggregator_id: int, certificate_id: int
+        session: AsyncSession, aggregator_id: int, certificate_id: int
     ) -> None:
         """Delete aggregator certificate assignment.
 
