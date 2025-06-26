@@ -23,6 +23,7 @@ class SubscriptionResource(IntEnum):
     SITE_DER_STATUS = auto()
     DEFAULT_SITE_CONTROL = auto()
     FUNCTION_SET_ASSIGNMENTS = auto()  # This just maps to the pollRate exposed in the FSA List
+    SITE_CONTROL_GROUP = auto()
 
 
 class Subscription(Base):
