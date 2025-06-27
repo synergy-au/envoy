@@ -81,6 +81,7 @@ class CertificateManager:
             return
 
         await crud.aggregator.assign_many_certificates(session, aggregator_id, producer)
+        await session.commit()
 
     @staticmethod
     async def unassign_certificate_for_aggregator(
