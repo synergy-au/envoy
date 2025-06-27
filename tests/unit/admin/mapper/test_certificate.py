@@ -1,7 +1,11 @@
 import pytest
 from assertical.asserts import generator as asserts_generator
 from assertical.fake import generator as fake_generator
-from envoy_schema.admin.schema.certificate import CertificateResponse, CertificatePageResponse
+from envoy_schema.admin.schema.certificate import (
+    CertificateResponse,
+    CertificatePageResponse,
+    CertificateAssignmentRequest,
+)
 
 from envoy.admin import mapper
 from envoy.server import model
@@ -39,3 +43,19 @@ def test_aggregator_to_page_response() -> None:
     assert mdl.limit == limit
     assert mdl.start == start
     assert mdl.total_count == total_count
+
+
+def test_map_from_many_request() -> None:
+    """Asserts that the type mapping is a straight passthrough of properties"""
+    req: list[CertificateAssignmentRequest] = [
+        CertificateAssignmentRequest(certificate_id=4),
+        CertificateAssignmentRequest(lfdi="SOMEFAKELFDI"),
+    ]
+
+    expecteds = [model.base.Certificate(certificate_id=4), model.base.Certificate(lfdi="SOMEFAKELFDI")]
+
+    for actual, expected in zip(mapper.CertificateMapper.map_from_many_request(req), expecteds):
+        assert actual.certificate_id == expected.certificate_id
+        assert actual.lfdi == expected.lfdi
+        assert actual.created == expected.created
+        assert actual.expiry == expected.expiry
