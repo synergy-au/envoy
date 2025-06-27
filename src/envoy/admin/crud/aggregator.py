@@ -46,5 +46,22 @@ async def assign_many_certificates(session: AsyncSession, aggregator_id: int, ce
     """
     new_relations = [{"aggregator_id": aggregator_id, "certificate_id": cid} for cid in certificate_ids]
     stmt = sa.insert(AggregatorCertificateAssignment).values(new_relations)
+    await session.execute(stmt)
 
+
+async def unassign_many_certificates(session: AsyncSession, aggregator_id: int, certificate_ids: Iterable[int]) -> None:
+    """Unassign certificates from an aggregator.
+
+    Does nothing if the relationship doesn't exist.
+
+    Args:
+        session: Database session
+        aggregator_id: ID of aggregator to have certificates unasssigned
+        certificate_ids: IDs of all certificates to unassign
+    """
+    stmt = (
+        sa.delete(AggregatorCertificateAssignment)
+        .where(AggregatorCertificateAssignment.aggregator_id == aggregator_id)
+        .where(AggregatorCertificateAssignment.certificate_id.in_(certificate_ids))
+    )
     await session.execute(stmt)

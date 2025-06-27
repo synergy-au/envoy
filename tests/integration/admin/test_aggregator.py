@@ -238,3 +238,39 @@ async def test_assign_certificates_to_aggregator_bad_certificate_id(admin_client
     )
 
     assert res_post.status_code == HTTPStatus.BAD_REQUEST
+
+
+@pytest.mark.parametrize(
+    "agg_id,cert_id,expected_ids",
+    [
+        (1, 1, [2, 3]),
+        (1, 2, [1, 3]),
+        (1, 3, [1, 2]),
+        (1, 111, None),
+        (111, 1, None),
+    ],
+)
+@pytest.mark.anyio
+async def test_delete_aggregator_certificate_assignments(
+    admin_client_auth: AsyncClient,
+    agg_id: int,
+    cert_id: int,
+    expected_ids: list[int],
+) -> None:
+    del_res = await admin_client_auth.delete(
+        uri.AggregatorCertificateUri.format(aggregator_id=agg_id, certificate_id=cert_id)
+    )
+
+    if expected_ids is None:
+        assert del_res.status_code == HTTPStatus.NOT_FOUND
+        return
+
+    assert del_res.status_code == HTTPStatus.NO_CONTENT
+
+    get_res = await admin_client_auth.get(uri.AggregatorCertificateListUri.format(aggregator_id=agg_id))
+
+    body = response.read_response_body_string(get_res)
+    cert_page = CertificatePageResponse.model_validate_json(body)
+    certs = cert_page.certificates
+
+    assert [c.certificate_id for c in certs] == expected_ids

@@ -136,3 +136,11 @@ async def create_many_certificates_on_conflict_do_nothing(
     )
     resp = await session.execute(stmt)
     return resp.scalars().all()
+
+
+async def select_certificate(session: AsyncSession, certificate_id: int) -> base.Certificate | None:
+    """Select a single certificate by ID"""
+    stmt = sa.select(base.Certificate).where(base.Certificate.certificate_id == certificate_id)
+
+    resp = await session.execute(stmt)
+    return resp.scalar_one_or_none()
