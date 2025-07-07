@@ -14,7 +14,11 @@ from envoy_schema.server.schema.sep2.pub_sub import (
 )
 
 from envoy.notification.crud.batch import AggregatorBatchedEntities, get_batch_key
-from envoy.notification.crud.common import ControlGroupScopedDefaultSiteControl, SiteScopedRuntimeServerConfig
+from envoy.notification.crud.common import (
+    ControlGroupScopedDefaultSiteControl,
+    SiteScopedRuntimeServerConfig,
+    SiteScopedSiteControlGroup,
+)
 from envoy.notification.exception import NotificationError
 from envoy.notification.task.check import (
     NON_LIST_RESOURCES,
@@ -563,6 +567,8 @@ def test_all_entity_batches(input_changed: dict[tuple, list], input_deleted: dic
         (SubscriptionResource.FUNCTION_SET_ASSIGNMENTS, SiteScopedRuntimeServerConfig, 241214),
         (SubscriptionResource.DEFAULT_SITE_CONTROL, ControlGroupScopedDefaultSiteControl, None),
         (SubscriptionResource.DEFAULT_SITE_CONTROL, ControlGroupScopedDefaultSiteControl, 331241),
+        (SubscriptionResource.SITE_CONTROL_GROUP, SiteScopedSiteControlGroup, None),
+        (SubscriptionResource.SITE_CONTROL_GROUP, SiteScopedSiteControlGroup, 442119),
     ],
 )
 def test_entities_to_notification_sites(  # noqa: C901
@@ -662,6 +668,9 @@ def test_entities_to_notification_sites(  # noqa: C901
                 assert expected_sub_resource_href_snippet in notification.subscribedResource
             elif resource == SubscriptionResource.DEFAULT_SITE_CONTROL and entity_length:
                 assert notification.resource.setGradW == entities[0].original.ramp_rate_percent_per_second
+                assert expected_sub_resource_href_snippet in notification.subscribedResource
+            elif resource == SubscriptionResource.SITE_CONTROL_GROUP and entity_length:
+                assert len(notification.resource.DERProgram) == len(entities)
                 assert expected_sub_resource_href_snippet in notification.subscribedResource
 
 
@@ -766,6 +775,7 @@ async def test_check_db_change_or_delete(
                 DeviceOrAggregatorRequestScope, display_site_id=VIRTUAL_END_DEVICE_SITE_ID, href_prefix=href_prefix
             ),
         ),
+        subscription_id=agg1_sub2.subscription_id,
     )
     assert_task_kicked_with_broker_and_args(
         mock_transmit_notification,
@@ -778,6 +788,7 @@ async def test_check_db_change_or_delete(
                 DeviceOrAggregatorRequestScope, display_site_id=agg2_sub1.scoped_site_id, href_prefix=href_prefix
             ),
         ),
+        subscription_id=agg2_sub1.subscription_id,
     )
 
     mock_fetch_batched_entities.assert_called_once_with(mock_session, resource, timestamp)
