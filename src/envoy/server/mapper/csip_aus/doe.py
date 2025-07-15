@@ -43,6 +43,13 @@ class DERControlMapper:
         )
 
     @staticmethod
+    def map_to_signed_percent(p: Decimal) -> int:
+        """Maps to the 2030.5 SignedPercent which is encoded as an integer representing "hundredths" of a percent
+
+        Values should be in the range -10000 - 10000. (10000 = 100%)"""
+        return int(p * 100)
+
+    @staticmethod
     def map_to_response(
         scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope],
         site_control_group_id: int,
@@ -123,6 +130,11 @@ class DERControlMapper:
                     ),
                     opModEnergize=doe.set_energized if doe.set_energized is not None else None,
                     opModConnect=doe.set_connected if doe.set_connected is not None else None,
+                    opModFixedW=(
+                        DERControlMapper.map_to_signed_percent(doe.set_point_percentage)
+                        if doe.set_point_percentage is not None
+                        else None
+                    ),
                     opModStorageTargetW=(
                         DERControlMapper.map_to_active_power(doe.storage_target_active_watts, pow10_multiplier)
                         if doe.storage_target_active_watts is not None
@@ -259,9 +271,12 @@ class DERProgramMapper:
         )
 
     @staticmethod
-    def doe_list_href(rq_scope: DeviceOrAggregatorRequestScope) -> str:
+    def doe_list_href(rq_scope: DeviceOrAggregatorRequestScope, fsa_id: Optional[int]) -> str:
         """Returns a href for a particular site's DER Program list"""
-        return generate_href(uri.DERProgramListUri, rq_scope, site_id=rq_scope.display_site_id)
+        if fsa_id is None:
+            return generate_href(uri.DERProgramListUri, rq_scope, site_id=rq_scope.display_site_id)
+        else:
+            return generate_href(uri.DERProgramFSAListUri, rq_scope, site_id=rq_scope.display_site_id, fsa_id=fsa_id)
 
     @staticmethod
     def doe_program_response(
@@ -320,13 +335,14 @@ class DERProgramMapper:
         total_site_control_groups: int,
         default_doe: Optional[DefaultSiteControl],
         pollrate_seconds: int,
+        fsa_id: Optional[int],
     ) -> DERProgramListResponse:
         """Returns a list of all DERPrograms.
 
         site_control_groups_with_control_count: List of groups to encode tupled with the count of upcoming controls"""
         return DERProgramListResponse.model_validate(
             {
-                "href": DERProgramMapper.doe_list_href(rq_scope),
+                "href": DERProgramMapper.doe_list_href(rq_scope, fsa_id),
                 "pollRate": pollrate_seconds,
                 "subscribable": SubscribableType.resource_supports_non_conditional_subscriptions,
                 "DERProgram": [

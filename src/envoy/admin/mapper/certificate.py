@@ -1,6 +1,11 @@
 from typing import Iterable
 
-from envoy_schema.admin.schema.certificate import CertificateResponse, CertificatePageResponse
+from envoy_schema.admin.schema.certificate import (
+    CertificateResponse,
+    CertificatePageResponse,
+    CertificateAssignmentRequest,
+    CertificateRequest,
+)
 
 from envoy.server import model
 
@@ -27,4 +32,24 @@ class CertificateMapper:
             start=start,
             limit=limit,
             certificates=[CertificateMapper.map_to_response(a) for a in certificates],
+        )
+
+    @staticmethod
+    def map_from_many_request(certificates: Iterable[CertificateAssignmentRequest]) -> list[model.Certificate]:
+        """Converts an iterable of CertificateAssignmentRequests into a list of sqlalchemy model certificates"""
+        return [
+            model.Certificate(
+                certificate_id=c.certificate_id,
+                lfdi=c.lfdi,
+                expiry=c.expiry,
+            )
+            for c in certificates
+        ]
+
+    @staticmethod
+    def map_from_request(certificate: CertificateRequest) -> model.Certificate:
+        """Converts request to model instance"""
+        return model.Certificate(
+            lfdi=certificate.lfdi,
+            expiry=certificate.expiry,
         )

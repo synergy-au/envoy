@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from itertools import product
 from typing import Optional, Union
 
@@ -15,6 +16,7 @@ from envoy_schema.server.schema.sep2.der import (
 )
 from envoy_schema.server.schema.sep2.event import EventStatusType
 from envoy_schema.server.schema.sep2.identification import Link, ListLink
+from envoy_schema.server.schema.uri import DERProgramFSAListUri, DERProgramListUri
 
 from envoy.server.mapper.csip_aus.doe import DERControlListSource, DERControlMapper, DERProgramMapper
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope, ArchiveSiteControlGroup
@@ -22,6 +24,22 @@ from envoy.server.model.config.default_doe import DefaultDoeConfiguration
 from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup
 from envoy.server.model.site import DefaultSiteControl
 from envoy.server.request_scope import BaseRequestScope, DeviceOrAggregatorRequestScope
+
+
+@pytest.mark.parametrize(
+    "percent, expected",
+    [
+        (Decimal("1.23"), 123),
+        (Decimal("-4.56"), -456),
+        (Decimal("0.000"), 0),
+        (Decimal("100.00"), 10000),
+        (Decimal("-100.00"), -10000),
+    ],
+)
+def test_map_to_signed_percent(percent: Decimal, expected: int):
+    actual = DERControlMapper.map_to_signed_percent(percent)
+    assert isinstance(actual, int)
+    assert actual == expected
 
 
 @pytest.mark.parametrize(
@@ -86,6 +104,9 @@ def test_map_derc_to_response(
     assert result_all_set.DERControlBase_.opModLoadLimW.value == int(doe.load_limit_active_watts * 10000)
     assert result_all_set.DERControlBase_.opModConnect == doe.set_connected
     assert result_all_set.DERControlBase_.opModEnergize == doe.set_energized
+    assert result_all_set.DERControlBase_.opModFixedW == DERControlMapper.map_to_signed_percent(
+        doe.set_point_percentage
+    )
     assert result_all_set.randomizeStart == doe.randomize_start_seconds
 
     # Event status parsing is a little complex - this tries to check all the options
@@ -117,6 +138,7 @@ def test_map_derc_to_response(
     assert result_optional.DERControlBase_.opModLoadLimW is None
     assert result_optional.DERControlBase_.opModConnect is None
     assert result_optional.DERControlBase_.opModEnergize is None
+    assert result_optional.DERControlBase_.opModFixedW is None
     assert result_optional.randomizeStart == randomize_seconds
 
     if isinstance(doe_opt, ArchiveDynamicOperatingEnvelope) and doe_opt.deleted_time is not None:
@@ -277,16 +299,18 @@ def test_map_derp_doe_program_response_no_default_doe(scg_type: type[Union[SiteC
 
 
 @pytest.mark.parametrize(
-    "control_groups_with_counts, total_control_groups, default_doe",
+    "control_groups_with_counts, total_control_groups, default_doe, fsa_id",
     [
-        ([], 0, None),
-        ([], 0, generate_class_instance(DefaultSiteControl)),
+        ([], 0, None, None),
+        ([], 0, None, 123),
+        ([], 0, generate_class_instance(DefaultSiteControl), None),
         (
             [
                 (generate_class_instance(SiteControlGroup, seed=101), 99),
                 (generate_class_instance(SiteControlGroup, seed=202, optional_is_none=True), 77),
             ],
             456,
+            None,
             None,
         ),
         (
@@ -296,6 +320,7 @@ def test_map_derp_doe_program_response_no_default_doe(scg_type: type[Union[SiteC
             ],
             456,
             generate_class_instance(DefaultSiteControl),
+            None,
         ),
         (
             [
@@ -303,6 +328,15 @@ def test_map_derp_doe_program_response_no_default_doe(scg_type: type[Union[SiteC
             ],
             789,
             generate_class_instance(DefaultSiteControl, optional_is_none=True),
+            None,
+        ),
+        (
+            [
+                (generate_class_instance(SiteControlGroup, seed=101), 11),
+            ],
+            789,
+            generate_class_instance(DefaultSiteControl, optional_is_none=True),
+            123,
         ),
     ],
 )
@@ -310,17 +344,23 @@ def test_map_derp_doe_program_list_response(
     control_groups_with_counts: list[tuple[SiteControlGroup, int]],
     total_control_groups: int,
     default_doe: Optional[DefaultSiteControl],
+    fsa_id: Optional[int],
 ):
     """Shows that encoding a list of site_control_groups works with various counts"""
-    scope: DeviceOrAggregatorRequestScope = generate_class_instance(DeviceOrAggregatorRequestScope)
-
+    scope: DeviceOrAggregatorRequestScope = generate_class_instance(DeviceOrAggregatorRequestScope, href_prefix="/foo")
+    poll_rate = 3
     result = DERProgramMapper.doe_program_list_response(
-        scope, control_groups_with_counts, total_control_groups, default_doe, 3
+        scope, control_groups_with_counts, total_control_groups, default_doe, poll_rate, fsa_id
     )
     assert result is not None
     assert isinstance(result, DERProgramListResponse)
-    assert result.href
-    assert result.pollRate == 3
+    assert result.pollRate == poll_rate
+
+    assert result.href.startswith(scope.href_prefix)
+    if fsa_id is None:
+        assert result.href.endswith(DERProgramListUri.format(site_id=scope.display_site_id))
+    else:
+        assert result.href.endswith(DERProgramFSAListUri.format(site_id=scope.display_site_id, fsa_id=fsa_id))
 
     assert result.all_ == total_control_groups
     if len(control_groups_with_counts) == 0:

@@ -20,6 +20,7 @@ from envoy.server.crud.doe import (
     select_doe_include_deleted,
     select_does_at_timestamp,
     select_site_control_group_by_id,
+    select_site_control_group_fsa_ids,
     select_site_control_groups,
 )
 from envoy.server.crud.end_device import select_single_site_with_site_id
@@ -53,11 +54,19 @@ def assert_doe_for_id(
 
         assert actual_doe.dynamic_operating_envelope_id == expected_doe_id
         assert expected_site_id is None or actual_doe.site_id == expected_site_id
+        assert actual_doe.site_control_group_id == 1
         if check_duration_seconds:
             assert actual_doe.duration_seconds == 10 * expected_doe_id + expected_doe_id
         assert actual_doe.import_limit_active_watts == Decimal(f"{expected_doe_id}.11")
         assert actual_doe.export_limit_watts == Decimal(f"-{expected_doe_id}.22")
-        assert actual_doe.site_control_group_id == 1
+        if expected_doe_id == 2:
+            assert actual_doe.generation_limit_active_watts is None
+            assert actual_doe.load_limit_active_watts is None
+            assert actual_doe.set_point_percentage is None
+        else:
+            assert actual_doe.generation_limit_active_watts == Decimal(f"{expected_doe_id}.33")
+            assert actual_doe.load_limit_active_watts == Decimal(f"-{expected_doe_id}.44")
+            assert actual_doe.set_point_percentage == Decimal(f"{expected_doe_id}.55")
 
         # This is also by convention
         if actual_doe.dynamic_operating_envelope_id in {1, 3, 4}:
@@ -611,6 +620,7 @@ async def extra_site_control_groups(pg_base_config):
                 seed=101,
                 primacy=2,
                 site_control_group_id=2,
+                fsa_id=1,
                 changed_time=datetime(2021, 4, 5, 10, 2, 0, 500000, tzinfo=timezone.utc),
             )
         )
@@ -620,6 +630,7 @@ async def extra_site_control_groups(pg_base_config):
                 seed=202,
                 primacy=1,
                 site_control_group_id=3,
+                fsa_id=3,
                 changed_time=datetime(2021, 4, 5, 10, 3, 0, 500000, tzinfo=timezone.utc),
             )
         )
@@ -629,6 +640,7 @@ async def extra_site_control_groups(pg_base_config):
                 seed=303,
                 primacy=1,
                 site_control_group_id=4,
+                fsa_id=1,
                 changed_time=datetime(2021, 4, 5, 10, 4, 0, 500000, tzinfo=timezone.utc),
             )
         )
@@ -658,17 +670,22 @@ async def test_select_site_control_group_by_id(
 
 
 @pytest.mark.parametrize(
-    "start, limit, changed_after, expected_ids, expected_count",
+    "start, limit, changed_after, fsa_id, expected_ids, expected_count",
     [
-        (0, 99, datetime.min, [1, 4, 3, 2], 4),
-        (1, 2, datetime.min, [4, 3], 4),
-        (99, 99, datetime.min, [], 4),
-        (0, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=timezone.utc), [1, 4, 3, 2], 4),
-        (3, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=timezone.utc), [2], 4),
-        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=timezone.utc), [4, 3, 2], 3),
-        (0, 99, datetime(2021, 4, 5, 10, 3, 0, tzinfo=timezone.utc), [4, 3], 2),
-        (0, 99, datetime(2021, 4, 5, 10, 4, 0, tzinfo=timezone.utc), [4], 1),
-        (0, 99, datetime(2021, 4, 5, 10, 5, 0, tzinfo=timezone.utc), [], 0),
+        (0, 99, datetime.min, None, [1, 4, 3, 2], 4),
+        (0, 99, datetime.min, 1, [1, 4, 2], 3),
+        (0, 99, datetime.min, 2, [], 0),
+        (0, 99, datetime.min, 3, [3], 1),
+        (1, 2, datetime.min, None, [4, 3], 4),
+        (1, 1, datetime.min, 1, [4], 3),
+        (99, 99, datetime.min, None, [], 4),
+        (0, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=timezone.utc), None, [1, 4, 3, 2], 4),
+        (3, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=timezone.utc), None, [2], 4),
+        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=timezone.utc), None, [4, 3, 2], 3),
+        (0, 99, datetime(2021, 4, 5, 10, 3, 0, tzinfo=timezone.utc), None, [4, 3], 2),
+        (0, 99, datetime(2021, 4, 5, 10, 4, 0, tzinfo=timezone.utc), None, [4], 1),
+        (0, 99, datetime(2021, 4, 5, 10, 5, 0, tzinfo=timezone.utc), None, [], 0),
+        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=timezone.utc), 1, [4, 2], 2),
     ],
 )
 @pytest.mark.anyio
@@ -677,14 +694,38 @@ async def test_select_and_count_site_control_groups(
     start: Optional[int],
     limit: Optional[int],
     changed_after: datetime,
+    fsa_id: Optional[int],
     expected_ids: list[int],
     expected_count: int,
 ):
     async with generate_async_session(extra_site_control_groups) as session:
-        actual_groups = await select_site_control_groups(session, start, changed_after, limit)
+        actual_groups = await select_site_control_groups(session, start, changed_after, limit, fsa_id)
         assert expected_ids == [e.site_control_group_id for e in actual_groups]
         assert_list_type(SiteControlGroup, actual_groups, len(expected_ids))
 
-        actual_count = await count_site_control_groups(session, changed_after)
+        actual_count = await count_site_control_groups(session, changed_after, fsa_id)
         assert isinstance(actual_count, int)
         assert actual_count == expected_count
+
+
+@pytest.mark.parametrize(
+    "changed_after, expected_fsa_ids",
+    [
+        (datetime.min, [1, 3]),
+        (datetime(2021, 4, 5, 10, 1, 0, tzinfo=timezone.utc), [1, 3]),
+        (datetime(2021, 4, 5, 10, 2, 0, tzinfo=timezone.utc), [1, 3]),
+        (datetime(2021, 4, 5, 10, 2, 0, tzinfo=timezone.utc), [1, 3]),
+        (datetime(2021, 4, 5, 10, 4, 0, tzinfo=timezone.utc), [1]),
+        (datetime(2021, 4, 5, 10, 6, 0, tzinfo=timezone.utc), []),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_site_control_group_fsa_ids(
+    extra_site_control_groups,
+    changed_after: datetime,
+    expected_fsa_ids: list[int],
+):
+    async with generate_async_session(extra_site_control_groups) as session:
+        actual_ids = await select_site_control_group_fsa_ids(session, changed_after)
+        assert_list_type(int, actual_ids, len(expected_fsa_ids))
+        assert set(expected_fsa_ids) == set(actual_ids)
