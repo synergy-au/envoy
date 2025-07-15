@@ -21,6 +21,9 @@ class SiteControlGroup(Base):
     primacy: Mapped[int] = (
         mapped_column()
     )  # The priority level of this group's controls relative to other groups. Lower is higher priority.
+    fsa_id: Mapped[int] = mapped_column(
+        index=True, server_default="1"
+    )  # The function set assignment ID that "groups" this SiteControlGroup with other SiteControlGroups
 
     created_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -90,6 +93,9 @@ class DynamicOperatingEnvelope(Base):
     load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True)
     set_energized: Mapped[Optional[bool]] = mapped_column(nullable=True)
     set_connected: Mapped[Optional[bool]] = mapped_column(nullable=True)
+    set_point_percentage: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
+    )  # Percentage of device max power settings to charge at (if negative) or discharge at (if positive). 100 = 100%
 
     # Storage extension
     storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(

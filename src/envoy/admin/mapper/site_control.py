@@ -17,7 +17,10 @@ class SiteControlGroupListMapper:
     @staticmethod
     def map_from_request(request: SiteControlGroupRequest, changed_time: datetime) -> SiteControlGroup:
         return SiteControlGroup(
-            description=request.description[:32], primacy=request.primacy, changed_time=changed_time
+            description=request.description[:32],
+            primacy=request.primacy,
+            changed_time=changed_time,
+            fsa_id=request.fsa_id,
         )
 
     @staticmethod
@@ -28,6 +31,7 @@ class SiteControlGroupListMapper:
             primacy=site_control_group.primacy,
             created_time=site_control_group.created_time,
             changed_time=site_control_group.changed_time,
+            fsa_id=site_control_group.fsa_id,
         )
 
     @staticmethod
@@ -63,6 +67,7 @@ class SiteControlListMapper:
                 load_limit_active_watts=c.load_limit_watts,
                 set_energized=c.set_energized,
                 set_connected=c.set_connect,
+                set_point_percentage=c.set_point_percentage,
                 end_time=c.start_time + timedelta(seconds=c.duration_seconds),
                 storage_target_active_watts=c.storage_target_watts,
             )
@@ -86,6 +91,7 @@ class SiteControlListMapper:
             load_limit_watts=control.load_limit_active_watts,
             set_energized=control.set_energized,
             set_connect=control.set_connected,
+            set_point_percentage=control.set_point_percentage,
             storage_target_watts=control.storage_target_active_watts,
         )
 
