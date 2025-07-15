@@ -83,5 +83,6 @@ class AdminSiteReadingMapper:
             CSIPAusSiteReadingUnit.REACTIVEPOWER: UomType.REACTIVE_POWER_VAR,
             CSIPAusSiteReadingUnit.FREQUENCY: UomType.FREQUENCY_HZ,
             CSIPAusSiteReadingUnit.VOLTAGE: UomType.VOLTAGE,
+            CSIPAusSiteReadingUnit.STORED_ENERGY: UomType.REAL_ENERGY_WATT_HOURS,
         }
         return uom_map[csip_unit]  # Raises KeyError if invalid unit
