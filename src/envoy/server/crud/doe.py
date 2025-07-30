@@ -183,6 +183,7 @@ async def select_active_does_include_deleted(
         DOE.created_time,
         DOE.changed_time,
         DOE.end_time,
+        DOE.superseded,
         DOE.start_time,
         DOE.duration_seconds,
         DOE.randomize_start_seconds,
@@ -193,7 +194,8 @@ async def select_active_does_include_deleted(
         DOE.set_energized,
         DOE.set_connected,
         DOE.set_point_percentage,
-        DOE.storage_target_active_watts,
+        DOE.ramp_time_seconds,
+        DOE.storage_target_active_watts,  # Storage extension
         literal_column("NULL").label("archive_id"),
         literal_column("NULL").label("archive_time"),
         literal_column("NULL").label("deleted_time"),
@@ -208,6 +210,7 @@ async def select_active_does_include_deleted(
         ArchiveDOE.created_time,
         ArchiveDOE.deleted_time.label(ArchiveDOE.changed_time.name),  # Changed time will be using "deleted_time"
         ArchiveDOE.end_time,
+        ArchiveDOE.superseded,
         ArchiveDOE.start_time,
         ArchiveDOE.duration_seconds,
         ArchiveDOE.randomize_start_seconds,
@@ -218,7 +221,8 @@ async def select_active_does_include_deleted(
         ArchiveDOE.set_energized,
         ArchiveDOE.set_connected,
         ArchiveDOE.set_point_percentage,
-        ArchiveDOE.storage_target_active_watts,
+        ArchiveDOE.ramp_time_seconds,
+        ArchiveDOE.storage_target_active_watts,  # Storage extension
         ArchiveDOE.archive_id,
         ArchiveDOE.archive_time,
         ArchiveDOE.deleted_time,
@@ -259,6 +263,7 @@ async def select_active_does_include_deleted(
                     start_time=t.start_time,
                     duration_seconds=t.duration_seconds,
                     end_time=t.end_time,
+                    superseded=t.superseded,
                     randomize_start_seconds=t.randomize_start_seconds,
                     import_limit_active_watts=t.import_limit_active_watts,
                     export_limit_watts=t.export_limit_watts,
@@ -267,7 +272,8 @@ async def select_active_does_include_deleted(
                     set_energized=t.set_energized,
                     set_connected=t.set_connected,
                     set_point_percentage=t.set_point_percentage,
-                    storage_target_active_watts=t.storage_target_active_watts,
+                    ramp_time_seconds=t.ramp_time_seconds,
+                    storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
                     archive_id=t.archive_id,
                     archive_time=t.archive_time,
                     deleted_time=t.deleted_time,
@@ -286,6 +292,7 @@ async def select_active_does_include_deleted(
                     start_time=t.start_time,
                     duration_seconds=t.duration_seconds,
                     end_time=t.end_time,
+                    superseded=t.superseded,
                     randomize_start_seconds=t.randomize_start_seconds,
                     import_limit_active_watts=t.import_limit_active_watts,
                     export_limit_watts=t.export_limit_watts,
@@ -294,7 +301,8 @@ async def select_active_does_include_deleted(
                     set_energized=t.set_energized,
                     set_connected=t.set_connected,
                     set_point_percentage=t.set_point_percentage,
-                    storage_target_active_watts=t.storage_target_active_watts,
+                    ramp_time_seconds=t.ramp_time_seconds,
+                    storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
                 ),
                 site.timezone_id,
             )
