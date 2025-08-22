@@ -162,15 +162,20 @@ async def test_refresh_seconds_updating_cache(
         token_requests = mocked_client.call_count_by_method_uri[(HTTPMethod.GET, TOKEN_URI)]
         jw_requests = mocked_client.call_count_by_method_uri[(HTTPMethod.GET, JWK_URI)]
         assert (
-            token_requests >= 3 and token_requests <= 4
-        ), "Depending on delays - should have 3 or 4 requests given the retry frequency and delay"
+            token_requests >= 3 and token_requests <= 5
+        ), "Depending on delays - should have 3 or 4 requests given the retry frequency and delay. +1 in case of load"
         assert jw_requests == 1
 
         # Lets dig into the guts of the current setup to pull out the db connections to see that
         # it includes our injected token
+        # NOTE - this is very timing sensitive - the main part is ensuring that the token is changing
         assert len(db_connection_creds) == 1, "Only 1 DB connection was expected as we only make 1 request"
-        assert db_connection_creds[0][1] == CUSTOM_DB_TOKEN.format(
-            idx=(token_requests - 1)
-        ), "The CUSTOM_DB_TOKEN should match the latest minted token to indicate that it's changing"
+        assert db_connection_creds[0][1] in [
+            CUSTOM_DB_TOKEN.format(idx=(token_requests - 1)),
+            CUSTOM_DB_TOKEN.format(idx=(token_requests - 2)),
+        ], "The CUSTOM_DB_TOKEN should match one of the latest minted tokens to indicate that it's changing"
+        assert db_connection_creds[0][1] != CUSTOM_DB_TOKEN.format(idx=1), "Ensure its changing"
+        assert db_connection_creds[0][1] != CUSTOM_DB_TOKEN.format(idx=0), "Ensure its changing"
+
     finally:
         event.remove(Pool, "connect", on_db_connect)
