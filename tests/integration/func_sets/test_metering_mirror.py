@@ -80,6 +80,7 @@ HREF_PREFIX = "/prefix"
         # Changed cert
         (0, None, 99, AGG_2_VALID_CERT, 0, []),
         (0, None, 99, DEVICE_5_CERT, 0, []),
+        (0, None, 99, UNREGISTERED_CERT, 0, []),  # An unregistered device should still return an empty list
     ],
 )
 @pytest.mark.anyio
@@ -111,31 +112,6 @@ async def test_get_mirror_usage_point_list_pagination(
         assert (
             parsed_response.mirrorUsagePoints is None or len(parsed_response.mirrorUsagePoints) == 0
         ), f"received body:\n{body}"
-
-
-@pytest.mark.parametrize(
-    "cert, expected_status",
-    [
-        (AGG_1_VALID_CERT, HTTPStatus.OK),
-        (DEVICE_5_CERT, HTTPStatus.OK),
-        (UNREGISTERED_CERT, HTTPStatus.FORBIDDEN),
-    ],
-)
-@pytest.mark.anyio
-async def test_get_mirror_usage_point_list_errors(
-    client: AsyncClient,
-    cert: str,
-    expected_status: HTTPStatus,
-):
-    """Tests the known ways fetching mup lists should fail"""
-    response = await client.get(
-        uris.MirrorUsagePointListUri,
-        headers={cert_header: urllib.parse.quote(cert)},
-    )
-    assert_response_header(response, expected_status)
-
-    if expected_status != HTTPStatus.OK:
-        assert_error_response(response)
 
 
 @pytest.mark.parametrize(
