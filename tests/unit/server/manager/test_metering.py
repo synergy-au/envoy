@@ -31,7 +31,7 @@ from envoy.server.model.config.server import RuntimeServerConfig
 from envoy.server.model.site import Site
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.subscription import SubscriptionResource
-from envoy.server.request_scope import CertificateType, MUPRequestScope
+from envoy.server.request_scope import CertificateType, MUPListRequestScope, MUPRequestScope
 
 
 @pytest.mark.anyio
@@ -309,9 +309,18 @@ async def test_create_or_update_mirror_usage_point_created_with_readings(pg_base
             assert db_reading.local_id == int(src_reading.localID, 16)
 
 
-@pytest.mark.parametrize("update_role_flags", [True, False])
+def force_case(force_upper_case: bool, val: str) -> str:
+    if force_upper_case:
+        return val.upper()
+    else:
+        return val.lower()
+
+
+@pytest.mark.parametrize("update_role_flags, force_upper_case", product([True, False], [True, False]))
 @pytest.mark.anyio
-async def test_create_or_update_mirror_usage_point_update(pg_base_config, update_role_flags: bool):
+async def test_create_or_update_mirror_usage_point_update(
+    pg_base_config, update_role_flags: bool, force_upper_case: bool
+):
     """Submitting a new MUP should insert everything associated with that mup under a new group ID"""
     reading1 = generate_class_instance(
         Reading,
@@ -338,7 +347,7 @@ async def test_create_or_update_mirror_usage_point_update(pg_base_config, update
     # Identical to SiteReadingType #1
     mmr1 = generate_class_instance(
         MirrorMeterReadingRequest,
-        mRID="10000000000000000000000000000abc",  # matches SiteReadingType 1
+        mRID=force_case(force_upper_case, "10000000000000000000000000000aBc"),  # matches SiteReadingType 1
         readingType=generate_class_instance(
             ReadingType,
             dataQualifier=2,
@@ -356,7 +365,7 @@ async def test_create_or_update_mirror_usage_point_update(pg_base_config, update
     # Brand new SiteReadingType
     mmr_new = generate_class_instance(
         MirrorMeterReading,
-        mRID="abc123def",
+        mRID=force_case(force_upper_case, "abc123DEF"),
         readingType=generate_class_instance(ReadingType, seed=404),
         reading=reading2,
     )
@@ -364,7 +373,7 @@ async def test_create_or_update_mirror_usage_point_update(pg_base_config, update
     # Updates SiteReadingType #5
     mmr5 = generate_class_instance(
         MirrorMeterReading,
-        mRID="50000000000000000000000000000abc",
+        mRID=force_case(force_upper_case, "50000000000000000000000000000Abc"),
         readingType=generate_class_instance(ReadingType, seed=505),
         reading=reading3,
     )
@@ -372,9 +381,9 @@ async def test_create_or_update_mirror_usage_point_update(pg_base_config, update
     mup = generate_class_instance(
         MirrorUsagePoint,
         seed=505,
-        mRID="10000000000000000000000000000def",  # For updating group #1
+        mRID=force_case(force_upper_case, "10000000000000000000000000000Def"),  # For updating group #1
         roleFlags="12" if update_role_flags else "1",
-        deviceLFDI="site1-lfdi",
+        deviceLFDI=force_case(force_upper_case, "site1-lfdi"),
         mirrorMeterReadings=[mmr1, mmr_new, mmr5],
     )
     async with generate_async_session(pg_base_config) as session:
@@ -423,7 +432,7 @@ async def test_create_or_update_mirror_usage_point_update(pg_base_config, update
 
         # Spot check a few values - make sure we properly group everything. Mapper tests do this in more detail
         for db_srt, mmr in zip([srt1, srt_new, srt5], [mmr1, mmr_new, mmr5]):
-            assert db_srt.group_mrid == mup.mRID
+            assert db_srt.group_mrid.casefold() == mup.mRID.casefold()
             assert db_srt.role_flags == MirrorUsagePointMapper.extract_role_flags(mup)
             assert db_srt.group_id == result.mup_id
             assert db_srt.accumulation_behaviour == mmr.readingType.accumulationBehaviour
@@ -678,9 +687,10 @@ async def test_delete_mirror_usage_point(
 @pytest.mark.parametrize(
     "scope",
     [
-        generate_class_instance(MUPRequestScope, source=CertificateType.DEVICE_CERTIFICATE, site_id=None),
-        generate_class_instance(MUPRequestScope, source=CertificateType.DEVICE_CERTIFICATE, site_id=123),
-        generate_class_instance(MUPRequestScope, source=CertificateType.AGGREGATOR_CERTIFICATE, site_id=123),
+        generate_class_instance(MUPListRequestScope, source=CertificateType.DEVICE_CERTIFICATE, device_site_id=123),
+        generate_class_instance(
+            MUPListRequestScope, source=CertificateType.AGGREGATOR_CERTIFICATE, device_site_id=None
+        ),
     ],
 )
 async def test_list_mirror_usage_points(
@@ -689,7 +699,7 @@ async def test_list_mirror_usage_points(
     mock_count_grouped_site_reading_details: mock.MagicMock,
     mock_fetch_grouped_site_reading_details: mock.MagicMock,
     mock_fetch_site_reading_types_for_group: mock.MagicMock,
-    scope: MUPRequestScope,
+    scope: MUPListRequestScope,
 ):
     """Check that the manager will handle interacting with the DB and its responses"""
 
@@ -727,27 +737,77 @@ async def test_list_mirror_usage_points(
     mock_fetch_grouped_site_reading_details.assert_called_once_with(
         mock_session,
         aggregator_id=scope.aggregator_id,
-        site_id=scope.site_id,
+        site_id=scope.device_site_id,
         start=start,
         changed_after=changed_after,
         limit=limit,
     )
     mock_count_grouped_site_reading_details.assert_called_once_with(
-        mock_session, aggregator_id=scope.aggregator_id, site_id=scope.site_id, changed_after=changed_after
+        mock_session, aggregator_id=scope.aggregator_id, site_id=scope.device_site_id, changed_after=changed_after
     )
     mock_fetch_site_reading_types_for_group.assert_has_calls(
         [
             mock.call(
-                mock_session, aggregator_id=scope.aggregator_id, site_id=scope.site_id, group_id=groups[0].group_id
+                mock_session,
+                aggregator_id=scope.aggregator_id,
+                site_id=scope.device_site_id,
+                group_id=groups[0].group_id,
             ),
             mock.call(
-                mock_session, aggregator_id=scope.aggregator_id, site_id=scope.site_id, group_id=groups[1].group_id
+                mock_session,
+                aggregator_id=scope.aggregator_id,
+                site_id=scope.device_site_id,
+                group_id=groups[1].group_id,
             ),
         ]
     )
 
     mock_MirrorUsagePointListMapper.map_to_list_response.assert_called_once_with(
         scope, count, [(groups[0], srts_group_1), (groups[1], srts_group_2)], config.mup_postrate_seconds
+    )
+
+
+@pytest.mark.anyio
+@mock.patch("envoy.server.manager.metering.fetch_site_reading_types_for_group")
+@mock.patch("envoy.server.manager.metering.fetch_grouped_site_reading_details")
+@mock.patch("envoy.server.manager.metering.count_grouped_site_reading_details")
+@mock.patch("envoy.server.manager.metering.MirrorUsagePointListMapper")
+@mock.patch("envoy.server.manager.end_device.RuntimeServerConfigManager.fetch_current_config")
+async def test_list_mirror_usage_points_unregistered_device(
+    mock_fetch_current_config: mock.MagicMock,
+    mock_MirrorUsagePointListMapper: mock.MagicMock,
+    mock_count_grouped_site_reading_details: mock.MagicMock,
+    mock_fetch_grouped_site_reading_details: mock.MagicMock,
+    mock_fetch_site_reading_types_for_group: mock.MagicMock,
+):
+    """Check that the manager will handle unregistered device certs"""
+
+    # Arrange
+    scope = generate_class_instance(MUPListRequestScope, source=CertificateType.DEVICE_CERTIFICATE, device_site_id=None)
+    mock_session = create_mock_session()
+    start = 4
+    limit = 5
+    changed_after = datetime.now()
+    empty_mup_response = generate_class_instance(MirrorUsagePointListResponse)
+    mock_MirrorUsagePointListMapper.map_to_list_response = mock.Mock(return_value=empty_mup_response)
+
+    config = RuntimeServerConfig()
+    mock_fetch_current_config.return_value = config
+
+    # Act
+    result = await MirrorMeteringManager.list_mirror_usage_points(mock_session, scope, start, limit, changed_after)
+    assert result is empty_mup_response
+
+    # Assert
+    assert_mock_session(mock_session, committed=False)
+
+    # No calls to the DB - this is simply dumping an empty list
+    mock_fetch_grouped_site_reading_details.assert_not_called()
+    mock_count_grouped_site_reading_details.assert_not_called()
+    mock_fetch_site_reading_types_for_group.assert_not_called()
+
+    mock_MirrorUsagePointListMapper.map_to_list_response.assert_called_once_with(
+        scope, 0, [], config.mup_postrate_seconds
     )
 
 
