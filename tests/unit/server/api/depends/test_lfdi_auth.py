@@ -7,7 +7,7 @@ from assertical.fake.generator import generate_class_instance
 from fastapi import HTTPException, Request
 from starlette.datastructures import Headers
 
-from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
+from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends, is_valid_lfdi, is_valid_pem, is_valid_sha256
 from envoy.server.crud.auth import ClientIdDetails
 from envoy.server.main import settings
 from envoy.server.model.aggregator import NULL_AGGREGATOR_ID
@@ -67,12 +67,15 @@ async def test_lfdiauthdepends_request_with_no_certpemheader_expect_500_response
     "bad_cert_header",
     ["test-abc123", TEST_CERTIFICATE_PEM_1.decode("utf-8")[4:], TEST_CERTIFICATE_LFDI_1[2:], TEST_CERTIFICATE_SFDI_1],
 )
-async def test_lfdiauthdepends_malformed_cert_fails_with_bad_request(
+async def test_lfdiauthdepends_malformed_cert_fails_with_internal_server_error(
     mock_db: mock.MagicMock,
     mock_select_all_client_id_details: mock.MagicMock,
     mock_select_single_site_with_sfdi: mock.MagicMock,
     bad_cert_header: str,
 ):
+    """If certificate header has malformed data, that is the TLS termination proxy's fault, so
+    we should raise 500 to the client.
+    """
     # Arrange
     req = Request(
         {
@@ -88,7 +91,7 @@ async def test_lfdiauthdepends_malformed_cert_fails_with_bad_request(
         await lfdi_dep(req)
 
     # Assert
-    assert exc.value.status_code == 400
+    assert exc.value.status_code == 500
     mock_select_all_client_id_details.assert_not_called()
     mock_select_single_site_with_sfdi.assert_not_called()
 
@@ -271,3 +274,72 @@ async def test_lfdiauthdepends_aggregator_specific_cert_thats_expired(
 
     mock_select_all_client_id_details.assert_called_once()
     mock_select_single_site_with_sfdi.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "pem_str,expected",
+    [
+        # valid
+        (TEST_CERTIFICATE_PEM_1.decode(), True),
+        (TEST_CERTIFICATE_PEM_2.decode(), True),
+        (TEST_CERTIFICATE_PEM_3.decode(), True),
+        (TEST_CERTIFICATE_PEM_4.decode(), True),
+        (TEST_CERTIFICATE_PEM_4.decode() + " ", True),
+        (" " + TEST_CERTIFICATE_PEM_4.decode(), True),
+        (TEST_CERTIFICATE_PEM_4.decode().replace("\n", ""), True),  # remove newlines
+        ("ignoreme" + TEST_CERTIFICATE_PEM_1.decode(), True),  # ignore extra bits
+        (TEST_CERTIFICATE_PEM_1.decode() + "ignoreme", True),  # ignore extra bits
+        # invalid
+        ("-----BEGIN", False),
+        (TEST_CERTIFICATE_PEM_1.decode().replace("A", "&"), False),
+    ],
+)
+def test_is_valid_pem(pem_str, expected):
+    assert is_valid_pem(pem_str) == expected
+
+
+@pytest.mark.parametrize(
+    "sha256_str,expected",
+    [
+        ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", True),  # valid lowercase
+        ("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", True),  # valid uppercase
+        ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85", False),  # too short
+        ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8555", False),  # too long
+        ("g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", False),  # not hex
+        ("", False),
+        (None, False),
+        (1234567890, False),  # not string
+    ],
+)
+def test_is_valid_sha256(sha256_str, expected):
+    assert is_valid_sha256(sha256_str) == expected
+
+
+@pytest.mark.parametrize(
+    "pem_bytes,sha256",
+    [
+        (TEST_CERTIFICATE_PEM_1, TEST_CERTIFICATE_FINGERPRINT_1),
+        (TEST_CERTIFICATE_PEM_2, TEST_CERTIFICATE_FINGERPRINT_2),
+        (TEST_CERTIFICATE_PEM_3, TEST_CERTIFICATE_FINGERPRINT_3),
+        (TEST_CERTIFICATE_PEM_4, TEST_CERTIFICATE_FINGERPRINT_4),
+    ],
+)
+def test_cert_pem_to_cert_fingerprint(pem_bytes: bytes, sha256: str):
+    assert LFDIAuthDepends._cert_pem_to_cert_fingerprint(pem_bytes.decode("utf-8")) == sha256
+
+
+@pytest.mark.parametrize(
+    "lfdi_str,expected",
+    [
+        ("996fb92427ae41e4649b934ca495991b7852b855", True),  # valid lowercase
+        ("996FB92427AE41E4649B934CA495991B7852B855", True),  # valid uppercase
+        ("996fb92427ae41e4649b934ca495991b7852b85", False),  # too short
+        ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8555", False),  # too long
+        ("g996fb92427ae41e4649b934ca495991b7852b855", False),  # not hex
+        ("", False),
+        (None, False),
+        (1234567890, False),  # not string
+    ],
+)
+def test_is_valid_lfdi(lfdi_str, expected):
+    assert is_valid_lfdi(lfdi_str) == expected
