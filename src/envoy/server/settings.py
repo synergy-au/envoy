@@ -16,6 +16,7 @@ class AppSettings(CommonSettings):
     version: str = importlib.metadata.version("envoy")
 
     cert_header: str = "x-forwarded-client-cert"  # either client certificate in PEM format or the sha256 fingerprint
+    bypass_lfdi_auth: bool = False # WARNING: do not use in production, this is to be used to facilitate controlled testing without the need for certificates.
 
     # Global fallback default doe for sites that do not have these configured.
     use_global_default_doe_fallback: bool = True

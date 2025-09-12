@@ -232,3 +232,18 @@ class LFDIAuthDepends:
 
         # generate fingerprint for certificate
         return load_pem_x509_certificate(cert_pem_b64.encode("utf-8")).fingerprint(hashes.SHA256()).hex()
+
+
+class ByPassLFDIAuth(LFDIAuthDepends):
+
+    async def __call__(self, request: Request) -> None:
+        """Fully bypassing things to removed need for passing in certificate headers"""
+        site_id: Optional[int] = None
+        aggregator_id: Optional[int] = NULL_AGGREGATOR_ID
+        source = CertificateType.AGGREGATOR_CERTIFICATE
+        request.state.source = source
+        request.state.lfdi = "BYPASSLFDI"
+        request.state.sfdi = "2132456"
+
+        request.state.aggregator_id = aggregator_id
+        request.state.site_id = site_id
