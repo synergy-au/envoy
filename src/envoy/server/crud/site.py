@@ -168,6 +168,22 @@ async def select_single_site_with_lfdi(session: AsyncSession, lfdi: str, aggrega
     return resp.scalar_one_or_none()
 
 
+async def insert_site_for_aggregator(session: AsyncSession, aggregator_id: int, site: Site) -> int:
+    """Inserts the specified site. If site's aggregator_id doesn't match aggregator_id then this will
+    raise an error without modifying the DB. Returns the site_id of the inserted site
+
+    Inserts will be based on matches on the agg_id / sfdi and/or agg_id / lfdi indexes. If this already exists than a
+    sqlalchemy.exc.IntegrityError is expected.
+    """
+
+    if aggregator_id != site.aggregator_id:
+        raise ValueError(f"Specified aggregator_id {aggregator_id} mismatches site.aggregator_id {site.aggregator_id}")
+
+    session.add(site)
+    await session.flush()
+    return site.site_id
+
+
 async def upsert_site_for_aggregator(session: AsyncSession, aggregator_id: int, site: Site) -> int:
     """Inserts or updates the specified site. If site's aggregator_id doesn't match aggregator_id then this will
     raise an error without modifying the DB. Returns the site_id of the inserted/updated site

@@ -12,20 +12,21 @@ from envoy_schema.server.schema.sep2.end_device import (
     RegistrationResponse,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from envoy.notification.manager.notification import NotificationManager
 from envoy.server.crud.archive import copy_rows_into_archive
-from envoy.server.crud.end_device import (
+from envoy.server.crud.site import (
     delete_site_for_aggregator,
     get_virtual_site_for_aggregator,
+    insert_site_for_aggregator,
     select_aggregator_site_count,
     select_all_sites_with_aggregator_id,
     select_single_site_with_lfdi,
     select_single_site_with_sfdi,
     select_single_site_with_site_id,
-    upsert_site_for_aggregator,
 )
-from envoy.server.exception import ForbiddenError, NotFoundError, UnableToGenerateIdError
+from envoy.server.exception import ForbiddenError, NotFoundError, UnableToGenerateIdError, ConflictError
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.connection_point import ConnectionPointMapper
@@ -165,15 +166,19 @@ class EndDeviceManager:
         return (None if a is None else a.lower()) == (None if b is None else b.lower())
 
     @staticmethod
-    async def add_or_update_enddevice_for_scope(
+    async def add_enddevice_for_scope(
         session: AsyncSession, scope: UnregisteredRequestScope, end_device: EndDeviceRequest
     ) -> int:
-        """This will add/update the specified end_device in the database.
+        """This will add the specified end_device in the database.
 
         If the sfdi is unspecified they will be populated using generate_unique_device_id.
 
         This request uses the raw request scope but will ensure that the scope has permission to access the supplied
-        site, raising ForbiddenError otherwise"""
+        site, raising ForbiddenError otherwise
+
+        Raises ConflictError if sfdi/lfdi-aggregator_id combination already exists.
+
+        """
         is_device_cert = scope.source == CertificateType.DEVICE_CERTIFICATE
         if is_device_cert:
             # This will happen for a site registration from a device cert
@@ -192,12 +197,20 @@ class EndDeviceManager:
             logger.info(f"add_or_update_enddevice_for_aggregator: generated sfdi {sfdi} and lfdi {lfdi}")
 
         logger.info(
-            f"add_or_update_enddevice_for_aggregator: upserting sfdi {end_device.sFDI} and lfdi {end_device.lFDI} for aggregator {scope.aggregator_id}"  # noqa e501
+            f"add_enddevice_for_aggregator: upserting sfdi {end_device.sFDI} and lfdi {end_device.lFDI} for aggregator {scope.aggregator_id}"  # noqa e501
         )
         changed_time = utc_now()
         registration_pin = RegistrationManager.generate_registration_pin()  # This will only apply to INSERTED sites
         site = EndDeviceMapper.map_from_request(end_device, scope.aggregator_id, changed_time, registration_pin)
-        result = await upsert_site_for_aggregator(session, scope.aggregator_id, site)
+        try:
+            result = await insert_site_for_aggregator(session, scope.aggregator_id, site)
+        except IntegrityError as exc:
+            logger.debug(exc)
+            raise ConflictError(
+                f"EndDevice with provided sFDI ({site.sfdi}) or lFDI ({site.lfdi})"
+                f"already exists for aggregator ({site.aggregator_id})."
+            )
+
         await session.commit()
 
         await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.SITE, changed_time)
@@ -227,6 +240,10 @@ class EndDeviceManager:
         )
         if site is None:
             return False
+
+        # We treat this as a successful update - avoiding uneccessary writes.
+        if site.nmi == nmi:
+            return True
 
         # Ensure we archive the existing data
         await copy_rows_into_archive(session, Site, ArchiveSite, lambda q: q.where(Site.site_id == site.site_id))
