@@ -57,16 +57,17 @@ class SiteReadingType(Base):
     )  # If a batch of readings is received without an interval - this length will be used to describe the batch length
     role_flags: Mapped[RoleFlagsType] = mapped_column(INTEGER)
 
-    created_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )  # When the reading set was created
-    changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the reading set was last altered
     description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
     group_description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
     version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     group_version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     group_status: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     commodity: Mapped[Optional[CommodityType]] = mapped_column(INTEGER, nullable=True)
+
+    created_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )  # When the reading set was created
+    changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the reading set was last altered
 
     site: Mapped["Site"] = relationship(lazy="raise")
 
