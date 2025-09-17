@@ -98,10 +98,26 @@ async def test_fetch_site_reading_types_for_group_mrid(
         assert [r.site_reading_type_id for r in results] == expected_srt_ids
 
 
-def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: int) -> GroupedSiteReadingTypeDetails:
+def g(
+    group_id: int,
+    group_mrid: str,
+    site_id: int,
+    site_lfdi: str,
+    role_flags: int,
+    group_description: Optional[str],
+    group_version: Optional[int],
+    group_status: Optional[int],
+) -> GroupedSiteReadingTypeDetails:
     """Just to make the test definition a bit more concise"""
     return GroupedSiteReadingTypeDetails(
-        group_id=group_id, group_mrid=group_mrid, site_id=site_id, site_lfdi=site_lfdi, role_flags=role_flags
+        group_id=group_id,
+        group_mrid=group_mrid,
+        site_id=site_id,
+        site_lfdi=site_lfdi,
+        role_flags=role_flags,
+        group_description=group_description,
+        group_status=group_status,
+        group_version=group_version,
     )
 
 
@@ -115,9 +131,9 @@ def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: 
             99,
             datetime.min,
             [
-                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1),
-                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3),
-                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4),
+                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1, "MUP 1", 102, 1),
+                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3, "MUP 3", 302, 0),
+                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4, None, None, None),
             ],
             3,
         ),
@@ -128,8 +144,8 @@ def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: 
             99,
             datetime.min,
             [
-                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3),
-                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4),
+                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3, "MUP 3", 302, 0),
+                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4, None, None, None),
             ],
             3,
         ),
@@ -140,8 +156,8 @@ def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: 
             2,
             datetime.min,
             [
-                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1),
-                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3),
+                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1, "MUP 1", 102, 1),
+                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3, "MUP 3", 302, 0),
             ],
             3,
         ),
@@ -152,12 +168,20 @@ def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: 
             99,
             datetime.min,
             [
-                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1),
-                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3),
+                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1, "MUP 1", 102, 1),
+                g(3, "30000000000000000000000000000def", 1, "site1-lfdi", 3, "MUP 3", 302, 0),
             ],
             2,
         ),
-        (1, 2, 0, 99, datetime.min, [g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4)], 1),
+        (
+            1,
+            2,
+            0,
+            99,
+            datetime.min,
+            [g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4, None, None, None)],
+            1,
+        ),
         (1, 3, 0, 99, datetime.min, [], 0),
         (2, 1, 0, 99, datetime.min, [], 0),
         (
@@ -167,8 +191,8 @@ def g(group_id: int, group_mrid: str, site_id: int, site_lfdi: str, role_flags: 
             99,
             datetime(2022, 5, 6, 14, 22, 33, tzinfo=timezone.utc),
             [
-                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1),
-                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4),
+                g(1, "10000000000000000000000000000def", 1, "site1-lfdi", 1, "MUP 1", 102, 1),
+                g(4, "40000000000000000000000000000def", 2, "site2-lfdi", 4, None, None, None),
             ],
             2,
         ),

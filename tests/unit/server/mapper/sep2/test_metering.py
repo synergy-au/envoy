@@ -51,11 +51,23 @@ def test_MirrorUsagePointMapper_map_from_request_no_uom(mmr: MirrorUsagePoint):
     site_id = 456
     group_id = 789
     group_mrid = "abc123"
+    group_description = "def456"
+    group_version = 2
+    group_status = 1
     changed_time = datetime.now()
 
     with pytest.raises(InvalidMappingError):
         MirrorUsagePointMapper.map_from_request(
-            mmr, aggregator_id, site_id, group_id, group_mrid, RoleFlagsType.NONE, changed_time
+            mmr,
+            aggregator_id,
+            site_id,
+            group_id,
+            group_mrid,
+            group_description,
+            group_version,
+            group_status,
+            RoleFlagsType.NONE,
+            changed_time,
         )
 
 
@@ -65,6 +77,9 @@ def test_MirrorUsagePointMapper_map_from_request_long_mrid():
     site_id = 456
     group_id = 789
     group_mrid = "abc123"
+    group_description = "def456"
+    group_version = 2
+    group_status = 1
     changed_time = datetime.now()
     mmr = generate_class_instance(
         MirrorMeterReading, mRID="a" * 33, readingType=generate_class_instance(ReadingType, uom=None)
@@ -72,7 +87,16 @@ def test_MirrorUsagePointMapper_map_from_request_long_mrid():
 
     with pytest.raises(InvalidMappingError):
         MirrorUsagePointMapper.map_from_request(
-            mmr, aggregator_id, site_id, group_id, group_mrid, RoleFlagsType.NONE, changed_time
+            mmr,
+            aggregator_id,
+            site_id,
+            group_id,
+            group_mrid,
+            group_description,
+            group_version,
+            group_status,
+            RoleFlagsType.NONE,
+            changed_time,
         )
 
 
@@ -82,14 +106,28 @@ def test_MirrorUsagePointMapper_map_from_request_long_group_mrid():
     site_id = 456
     group_id = 789
     group_mrid = "a" * 33
+    group_description = "def456"
+    group_version = 2
+    group_status = 1
     changed_time = datetime.now()
     mmr = generate_class_instance(
-        MirrorMeterReading, mRID="abc", readingType=generate_class_instance(ReadingType, uom=None)
+        MirrorMeterReading,
+        mRID="abc",
+        readingType=generate_class_instance(ReadingType, uom=None),
     )
 
     with pytest.raises(InvalidMappingError):
         MirrorUsagePointMapper.map_from_request(
-            mmr, aggregator_id, site_id, group_id, group_mrid, RoleFlagsType.NONE, changed_time
+            mmr,
+            aggregator_id,
+            site_id,
+            group_id,
+            group_mrid,
+            group_description,
+            group_version,
+            group_status,
+            RoleFlagsType.NONE,
+            changed_time,
         )
 
 
@@ -157,6 +195,9 @@ def test_MirrorUsagePointMapper_merge_site_reading_type_changes(optional_is_none
     site_id = 789
     group_id = 1001
     group_mrid = "abc-123"
+    group_description = "def-456"
+    group_version = 11
+    group_status = 1
     created_time = datetime(2011, 2, 3, tzinfo=timezone.utc)
     target = generate_class_instance(
         SiteReadingType,
@@ -167,6 +208,9 @@ def test_MirrorUsagePointMapper_merge_site_reading_type_changes(optional_is_none
         site_id=site_id,
         group_id=group_id,
         group_mrid=group_mrid,
+        group_description=group_description,
+        group_version=group_version,
+        group_status=group_status,
         aggregator_id=agg_id,
         created_time=created_time,
     )
@@ -186,6 +230,9 @@ def test_MirrorUsagePointMapper_merge_site_reading_type_changes(optional_is_none
             "created_time",
             "group_id",
             "group_mrid",
+            "group_description",
+            "group_version",
+            "group_status",
             "mrid",
             "role_flags",
         },
@@ -198,6 +245,9 @@ def test_MirrorUsagePointMapper_merge_site_reading_type_changes(optional_is_none
     assert target.site_id == site_id
     assert target.group_id == group_id
     assert target.group_mrid == group_mrid
+    assert target.group_description == group_description
+    assert target.group_version == group_version
+    assert target.group_status == group_status
 
 
 def test_MirrorUsagePointMapper_map_from_request():
@@ -206,6 +256,9 @@ def test_MirrorUsagePointMapper_map_from_request():
     site_id = 456
     group_id = 789
     group_mrid = "abc123"
+    group_description = "def456"
+    group_version = 2
+    group_status = 1
     changed_time = datetime.now()
     role_flags = RoleFlagsType.IS_PEV
     mmr_all_set = generate_class_instance(MirrorMeterReading, seed=202)
@@ -217,7 +270,16 @@ def test_MirrorUsagePointMapper_map_from_request():
     mmr_optional.readingType = generate_class_instance(ReadingType, seed=606, optional_is_none=True, uom=UomType.JOULES)
 
     result_all_set = MirrorUsagePointMapper.map_from_request(
-        mmr_all_set, aggregator_id, site_id, group_id, group_mrid, role_flags, changed_time
+        mmr_all_set,
+        aggregator_id,
+        site_id,
+        group_id,
+        group_mrid,
+        group_description,
+        group_version,
+        group_status,
+        role_flags,
+        changed_time,
     )
     assert result_all_set is not None
     assert isinstance(result_all_set, SiteReadingType)
@@ -225,6 +287,9 @@ def test_MirrorUsagePointMapper_map_from_request():
     assert result_all_set.site_id == site_id
     assert result_all_set.group_id == group_id
     assert result_all_set.group_mrid == group_mrid
+    assert result_all_set.group_description == group_description
+    assert result_all_set.group_status == group_status
+    assert result_all_set.group_version == group_version
     assert result_all_set.mrid == mmr_all_set.mRID
     assert result_all_set.changed_time == changed_time
     assert result_all_set.uom == UomType.APPARENT_POWER_VA
@@ -235,10 +300,13 @@ def test_MirrorUsagePointMapper_map_from_request():
     assert result_all_set.accumulation_behaviour == mmr_all_set.readingType.accumulationBehaviour
     assert result_all_set.flow_direction == mmr_all_set.readingType.flowDirection
     assert result_all_set.default_interval_seconds == mmr_all_set.readingType.intervalLength
+    assert result_all_set.commodity == mmr_all_set.readingType.commodity
+    assert result_all_set.description == mmr_all_set.description
+    assert result_all_set.version == mmr_all_set.version
     assert result_all_set.role_flags == role_flags
 
     result_optional = MirrorUsagePointMapper.map_from_request(
-        mmr_optional, aggregator_id, site_id, group_id, group_mrid, role_flags, changed_time
+        mmr_optional, aggregator_id, site_id, group_id, group_mrid, None, None, None, role_flags, changed_time
     )
     assert result_optional is not None
     assert isinstance(result_optional, SiteReadingType)
@@ -247,6 +315,9 @@ def test_MirrorUsagePointMapper_map_from_request():
     assert result_optional.group_id == group_id
     assert result_optional.group_mrid == group_mrid
     assert result_optional.mrid == mmr_optional.mRID
+    assert result_optional.group_description is None
+    assert result_optional.group_status is None
+    assert result_optional.group_version is None
     assert result_optional.changed_time == changed_time
     assert result_optional.uom == UomType.JOULES
     assert result_optional.power_of_ten_multiplier == 0, "Not set in mup_optional"
@@ -256,12 +327,16 @@ def test_MirrorUsagePointMapper_map_from_request():
     assert result_optional.accumulation_behaviour == AccumulationBehaviourType.NOT_APPLICABLE, "Not set in mup_optional"
     assert result_optional.flow_direction == FlowDirectionType.NOT_APPLICABLE, "Not set in mup_optional"
     assert result_optional.default_interval_seconds == 0, "Not set in mup_optional"
+    assert result_optional.commodity is None, "Not set in mup_optional"
+    assert result_optional.description == mmr_optional.description
+    assert result_optional.version == mmr_optional.version
     assert result_optional.role_flags == role_flags
 
 
-def test_MirrorUsagePointMapper_map_to_response():
+@pytest.mark.parametrize("group_has_nones", [True, False])
+def test_MirrorUsagePointMapper_map_to_response(group_has_nones: bool):
     """Tests that no exceptions are raised when mapping some common SiteReadingType's"""
-    group = generate_class_instance(GroupedSiteReadingTypeDetails)
+    group = generate_class_instance(GroupedSiteReadingTypeDetails, optional_is_none=group_has_nones)
     srts = [
         generate_class_instance(SiteReadingType, seed=101, optional_is_none=False),
         generate_class_instance(SiteReadingType, seed=202, optional_is_none=True),
@@ -278,13 +353,22 @@ def test_MirrorUsagePointMapper_map_to_response():
     assert result.href.endswith(uris.MirrorUsagePointUri.format(mup_id=group.group_id))
     assert isinstance(result.mRID, str)
     assert result.mRID == group.group_mrid
+    assert result.description == group.group_description
+    assert result.version == group.group_version
+    if group.group_status is None:
+        assert result.status == 0
+    else:
+        assert result.status == group.group_status
     assert result.mirrorMeterReadings
     assert len(result.mirrorMeterReadings) == len(srts)
     for mmr, srt in zip(result.mirrorMeterReadings, srts):
         assert mmr.mRID == srt.mrid
+        assert mmr.version == srt.version
+        assert mmr.description == srt.description
         assert mmr.readingType
         assert mmr.readingType.phase == srt.phase
         assert mmr.readingType.uom == srt.uom
+        assert mmr.readingType.commodity == srt.commodity
         assert mmr.readingType.powerOfTenMultiplier == srt.power_of_ten_multiplier
 
     assert result.postRate == post_rate_seconds

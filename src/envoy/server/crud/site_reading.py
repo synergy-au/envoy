@@ -19,6 +19,9 @@ class GroupedSiteReadingTypeDetails:
 
     group_id: int
     group_mrid: str
+    group_description: Optional[str]
+    group_status: Optional[int]
+    group_version: Optional[int]
     site_id: int
     site_lfdi: str
     role_flags: int
@@ -85,16 +88,22 @@ async def _fetch_site_reading_type_groups(
     limit: Optional[int],
 ) -> Union[int, list[GroupedSiteReadingTypeDetails]]:
 
-    select_clause: Union[Select[tuple[int]], Select[tuple[int, str, int, RoleFlagsType, str]]]
+    select_clause: Union[
+        Select[tuple[int]],
+        Select[tuple[int, str, Optional[str], Optional[int], Optional[int], int, str, RoleFlagsType]],
+    ]
     if only_count:
         select_clause = select(func.count(distinct(SiteReadingType.group_id))).select_from(SiteReadingType)
     else:
         select_clause = select(
             SiteReadingType.group_id,
             func.max(SiteReadingType.group_mrid),
+            func.max(SiteReadingType.group_description),
+            func.max(SiteReadingType.group_status),
+            func.max(SiteReadingType.group_version),
             func.max(SiteReadingType.site_id),
-            func.max(SiteReadingType.role_flags),
             func.max(Site.lfdi),
+            func.max(SiteReadingType.role_flags),
         ).join(Site)
 
     # Build WHERE clause
@@ -110,7 +119,10 @@ async def _fetch_site_reading_type_groups(
         return resp.scalar_one()
     else:
         resp = await session.execute(select_clause.limit(limit).offset(start).group_by(SiteReadingType.group_id))
-        return [GroupedSiteReadingTypeDetails(row[0], row[1], row[2], row[4], row[3]) for row in resp.tuples().all()]
+        return [
+            GroupedSiteReadingTypeDetails(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
+            for row in resp.tuples().all()
+        ]
 
 
 async def fetch_grouped_site_reading_details(

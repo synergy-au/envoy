@@ -98,6 +98,9 @@ class MirrorMeteringManager:
                     site_id=site_id,
                     group_id=group_id,
                     group_mrid=mup.mRID,
+                    group_description=mup.description,
+                    group_version=mup.version,
+                    group_status=mup.status,
                     role_flags=role_flags,
                     changed_time=changed_time,
                 )
@@ -110,7 +113,12 @@ class MirrorMeteringManager:
 
             # Certain properties exist at the MUP level - changing them will require updating ALL existing
             # SiteReadingTypes in the group
-            if role_flags != group_srts[0].role_flags:
+            if (
+                (role_flags != group_srts[0].role_flags)
+                or (mup.description != group_srts[0].group_description)
+                or (mup.version != group_srts[0].group_version)
+                or (mup.status != group_srts[0].group_status)
+            ):
                 group_srt_ids = [srt.site_reading_type_id for srt in group_srts]
                 await copy_rows_into_archive(
                     session,
@@ -119,18 +127,26 @@ class MirrorMeteringManager:
                     lambda q: q.where(SiteReadingType.site_reading_type_id.in_(group_srt_ids)),
                 )
                 for srt in group_srts:
+                    srt.changed_time = changed_time
                     srt.role_flags = role_flags
+                    srt.group_description = mup.description
+                    srt.group_version = mup.version
+                    srt.group_status = mup.status
                 await session.flush()
 
         await MirrorMeteringManager.sync_mirror_meter_readings(
             session,
             scope=scope,
+            changed_time=changed_time,
             mmrs=mup.mirrorMeterReadings,
             srts_by_mrid=srts_by_mrid,
             site_id=site.site_id,
             group_id=group_id,
             role_flags=role_flags,
             group_mrid=mup.mRID,
+            group_description=mup.description,
+            group_status=mup.status,
+            group_version=mup.version,
         )
         await session.commit()
 
@@ -151,6 +167,9 @@ class MirrorMeteringManager:
         site_id = srts[0].site_id  # We can assume that all SiteReadingType's under a group share a site_id
         role_flags = srts[0].role_flags  # We know that these will be shared across all SiteReadingTypes under a group
         group_mrid = srts[0].group_mrid  # We know that these will be shared across all SiteReadingTypes under a group
+        group_description = srts[0].group_description  # These will be shared across all SiteReadingTypes under a group
+        group_version = srts[0].group_version  # These will be shared across all SiteReadingTypes under a group
+        group_status = srts[0].group_status  # These will be shared across all SiteReadingTypes under a group
 
         site = await select_single_site_with_site_id(session, site_id=site_id, aggregator_id=scope.aggregator_id)
         if site is None:
@@ -161,6 +180,9 @@ class MirrorMeteringManager:
         group = GroupedSiteReadingTypeDetails(
             group_id=mup_id,
             group_mrid=group_mrid,
+            group_description=group_description,
+            group_status=group_status,
+            group_version=group_version,
             site_id=site_id,
             site_lfdi=site.lfdi,
             role_flags=role_flags,
@@ -212,6 +234,9 @@ class MirrorMeteringManager:
         role_flags = srts[0].role_flags  # We will always copy these across the group
         site_id = srts[0].site_id  # We will always copy these across the group
         group_mrid = srts[0].group_mrid  # We will always copy these across the group
+        group_description = srts[0].group_description  # We will always copy these across the group
+        group_version = srts[0].group_version  # We will always copy these across the group
+        group_status = srts[0].group_status  # We will always copy these across the group
 
         # Parse all the incoming MirrorMeterReadings - see if we need to update/insert any of our existing
         # SiteReadingTypes
@@ -229,12 +254,16 @@ class MirrorMeteringManager:
         await MirrorMeteringManager.sync_mirror_meter_readings(
             session,
             scope=scope,
+            changed_time=utc_now(),
             mmrs=mmrs,
             srts_by_mrid=srts_by_mrid,
             site_id=site_id,
             group_id=mup_id,
             role_flags=role_flags,
             group_mrid=group_mrid,
+            group_description=group_description,
+            group_version=group_version,
+            group_status=group_status,
         )
 
     @staticmethod
@@ -287,12 +316,16 @@ class MirrorMeteringManager:
     async def sync_mirror_meter_readings(
         session: AsyncSession,
         scope: MUPRequestScope,
+        changed_time: datetime,
         mmrs: list[MirrorMeterReading],
         srts_by_mrid: CaseInsensitiveDict[SiteReadingType],
         site_id: int,
         group_id: int,
         role_flags: RoleFlagsType,
         group_mrid: str,
+        group_description: Optional[str],
+        group_version: Optional[int],
+        group_status: Optional[int],
     ) -> None:
         """Adds or updates a set of MirrorMeterReadings for a given group id. Expects every entry in
         srts_by_mrid to be flushed to the database (so they have a primary key set).
@@ -318,10 +351,18 @@ class MirrorMeteringManager:
                     mmrs_to_update.append((mmr, matched_srt))  # Don't update unless we have a ReadingType
 
         # Start applying the changes to the updating MMRs
-        changed_time = utc_now()
         for mmr, target_srt in mmrs_to_update:
             src_srt = MirrorUsagePointMapper.map_from_request(
-                mmr, scope.aggregator_id, site_id, group_id, group_mrid, role_flags, changed_time
+                mmr=mmr,
+                aggregator_id=scope.aggregator_id,
+                site_id=site_id,
+                group_id=group_id,
+                group_mrid=group_mrid,
+                role_flags=role_flags,
+                changed_time=changed_time,
+                group_description=group_description,
+                group_status=group_status,
+                group_version=group_version,
             )
 
             # We have to ensure we update in this order otherwise SQLALchemy will batch the operations in the wrong
@@ -338,7 +379,16 @@ class MirrorMeteringManager:
         # Start inserting/updating the new site reading types
         for mmr in mmrs_to_insert:
             new_srt = MirrorUsagePointMapper.map_from_request(
-                mmr, scope.aggregator_id, site_id, group_id, group_mrid, role_flags, changed_time
+                mmr=mmr,
+                aggregator_id=scope.aggregator_id,
+                site_id=site_id,
+                group_id=group_id,
+                group_mrid=group_mrid,
+                role_flags=role_flags,
+                changed_time=changed_time,
+                group_description=group_description,
+                group_status=group_status,
+                group_version=group_version,
             )
             session.add(new_srt)
             srts_by_mrid[mmr.mRID] = new_srt  # Log this new site reading type
