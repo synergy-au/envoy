@@ -85,14 +85,14 @@ async def test_get_connectionpoint_none_nmi(
         cursor.execute('UPDATE public.site SET "nmi" = NULL WHERE "site_id" = 1')
         pg_base_config.commit()
 
-    response = await client.get(
-        connection_point_uri_format.format(site_id=1), headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}
-    )
+    href = connection_point_uri_format.format(site_id=1)
+    response = await client.get(href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)})
     assert_response_header(response, HTTPStatus.OK)
     body = read_response_body_string(response)
     assert len(body) > 0
     parsed_response: ConnectionPointResponse = ConnectionPointResponse.from_xml(body)
     assert parsed_response.id is None or parsed_response.id == "", "Expected empty id"
+    assert parsed_response.href == href
 
 
 @pytest.mark.parametrize(
@@ -122,7 +122,7 @@ async def test_connectionpoint_update(
     # fire off our update
     href = connection_point_uri_format.format(site_id=site_id)
     new_cp_specified: ConnectionPointRequest = ConnectionPointRequest(id=update_nmi_value)
-    response = await client.post(
+    response = await client.put(
         url=href, headers={cert_header: urllib.parse.quote(cert)}, content=new_cp_specified.to_xml()
     )
 
@@ -161,7 +161,7 @@ async def test_connectionpoint_update_and_fetch_legacy_csip(client: AsyncClient,
     # fire off our first update
     href = connection_point_uri_format.format(site_id=1)
     new_cp_specified: ConnectionPointRequest = ConnectionPointRequest(id_v11="1212121212")
-    response = await client.post(
+    response = await client.put(
         url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=new_cp_specified.to_xml()
     )
     assert_response_header(response, HTTPStatus.CREATED, expected_content_type=None)
@@ -185,13 +185,15 @@ async def test_connectionpoint_update_and_fetch_href_prefix(client: AsyncClient,
 
     # fire off our first update
     href = connection_point_uri_format.format(site_id=1)
+    expected_href = "/my/custom/prefix" + href
     new_cp_specified: ConnectionPointRequest = ConnectionPointRequest(id="1212121212")
-    response = await client.post(
+    response = await client.put(
         url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=new_cp_specified.to_xml()
     )
     assert_response_header(response, HTTPStatus.CREATED, expected_content_type=None)
     body = read_response_body_string(response)
-    assert read_location_header(response) == "/my/custom/prefix" + href
+
+    assert read_location_header(response) == expected_href
     assert len(body) == 0
 
     # check it updated
@@ -201,6 +203,7 @@ async def test_connectionpoint_update_and_fetch_href_prefix(client: AsyncClient,
     assert len(body) > 0
     parsed_response: ConnectionPointResponse = ConnectionPointResponse.from_xml(body)
     assert parsed_response.id == new_cp_specified.id
+    assert parsed_response.href == expected_href
 
 
 @pytest.mark.anyio
@@ -211,7 +214,7 @@ async def test_connectionpoint_update_bad_xml(client: AsyncClient, connection_po
     bad_xml = """<ConnectionPoint xmlns="http://csipaus.org/ns"><id>1111111111</csipaus:id></ConnectionPoint>"""
 
     href = connection_point_uri_format.format(site_id=1)
-    response = await client.post(url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=bad_xml)
+    response = await client.put(url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=bad_xml)
     assert_response_header(response, HTTPStatus.BAD_REQUEST)
     assert_error_response(response)
 
@@ -224,7 +227,7 @@ async def test_connectionpoint_update_aggregator_edev_returns_403(
 
     href = connection_point_uri_format.format(site_id=0)
     new_cp_specified: ConnectionPointRequest = ConnectionPointRequest(id="1212121212")
-    response = await client.post(
+    response = await client.put(
         url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=new_cp_specified.to_xml()
     )
     assert response.status_code == HTTPStatus.FORBIDDEN

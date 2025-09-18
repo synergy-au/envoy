@@ -19,7 +19,7 @@ from envoy.server.crud.doe import (
     select_site_control_group_by_id,
     select_site_control_groups,
 )
-from envoy.server.crud.end_device import select_single_site_with_site_id, select_site_with_default_site_control
+from envoy.server.crud.site import select_single_site_with_site_id, select_site_with_default_site_control
 from envoy.server.exception import NotFoundError
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
@@ -226,7 +226,9 @@ class DERControlManager:
         # fetch runtime server config
         config = await RuntimeServerConfigManager.fetch_current_config(session)
 
-        return DERControlMapper.map_to_default_response(scope, default_site_control, config.site_control_pow10_encoding)
+        return DERControlMapper.map_to_default_response(
+            scope, default_site_control, scope.display_site_id, der_program_id, config.site_control_pow10_encoding
+        )
 
     @staticmethod
     def _resolve_default_site_control(

@@ -37,7 +37,7 @@ from envoy.notification.crud.common import (
 from envoy.notification.exception import NotificationError
 from envoy.notification.handler import broker_dependency, href_prefix_dependency, session_dependency
 from envoy.notification.task.transmit import transmit_notification
-from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
+from envoy.server.crud.site import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.manager.server import RuntimeServerConfigManager, _map_server_config
 from envoy.server.mapper.constants import PricingReadingType
 from envoy.server.mapper.sep2.pub_sub import NotificationMapper, NotificationType, SubscriptionMapper
@@ -323,6 +323,7 @@ def entities_to_notification(
 
         return NotificationMapper.map_default_site_control_response(
             None if default_site_control is None else default_site_control.original,
+            site_control_group_id,
             config.site_control_pow10_encoding,
             sub,
             scope,

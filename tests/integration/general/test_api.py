@@ -10,7 +10,7 @@ from assertical.fake.http import MockedAsyncClient
 from assertical.fixtures.postgres import generate_async_session
 from httpx import AsyncClient, Response
 
-from envoy.server.crud.end_device import select_single_site_with_site_id
+from envoy.server.crud.site import select_single_site_with_site_id
 from tests.integration.http import HTTPMethod
 from tests.integration.response import (
     assert_error_response,
@@ -37,7 +37,7 @@ ALL_ENDPOINTS_WITH_SUPPORTED_METHODS: list[tuple[list[HTTPMethod], str]] = [
     # edev function set
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.DELETE], "/edev/1"),
     ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.POST], "/edev"),
-    ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.POST, HTTPMethod.PUT], "/edev/1/cp"),
+    ([HTTPMethod.GET, HTTPMethod.HEAD, HTTPMethod.PUT], "/edev/1/cp"),
     ([HTTPMethod.GET, HTTPMethod.HEAD], "/edev/1/rg"),
 
     # function-set-assignments function set

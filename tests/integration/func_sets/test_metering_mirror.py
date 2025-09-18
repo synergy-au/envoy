@@ -204,6 +204,39 @@ async def test_get_mirror_usage_point_list_pagination(
                     "serviceCategoryKind": ServiceKind.ELECTRICITY,
                     "roleFlags": "18",
                     "status": 0,
+                    "version": 76,
+                    "description": "MUP Description Update",
+                    "mirrorMeterReadings": [
+                        {
+                            "mRID": "new-mmr",
+                            "readingType": {
+                                "powerOfTenMultiplier": 3,
+                                "kind": KindType.POWER,
+                                "uom": UomType.REAL_POWER_WATT,
+                                "phase": PhaseCode.PHASE_B,
+                                "flowDirection": FlowDirectionType.FORWARD,
+                                "dataQualifier": DataQualifierType.AVERAGE,
+                                "accumulationBehaviour": AccumulationBehaviourType.CUMULATIVE,
+                                "intervalLength": None,
+                            },
+                        }
+                    ],
+                }
+            ),
+            "/mup/1",
+            HTTPStatus.NO_CONTENT,
+        ),
+        # Update an existing mup
+        (
+            MirrorUsagePointRequest.model_validate(
+                {
+                    "mRID": "10000000000000000000000000000def",
+                    "deviceLFDI": "site1-lfdi",
+                    "serviceCategoryKind": ServiceKind.ELECTRICITY,
+                    "roleFlags": "18",
+                    "status": 1,
+                    "version": 99,
+                    "description": "MUP Description",
                     "mirrorMeterReadings": [
                         {
                             "mRID": "new-mmr",

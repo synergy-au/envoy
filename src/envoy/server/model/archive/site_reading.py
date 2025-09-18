@@ -3,6 +3,7 @@ from typing import Optional
 
 from envoy_schema.server.schema.sep2.types import (
     AccumulationBehaviourType,
+    CommodityType,
     DataQualifierType,
     FlowDirectionType,
     KindType,
@@ -37,6 +38,13 @@ class ArchiveSiteReadingType(ArchiveBase):
     power_of_ten_multiplier: Mapped[int] = mapped_column(INTEGER)
     default_interval_seconds: Mapped[int] = mapped_column(INTEGER)
     role_flags: Mapped[RoleFlagsType] = mapped_column(INTEGER)
+
+    description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
+    group_description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
+    version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    group_version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    group_status: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    commodity: Mapped[Optional[CommodityType]] = mapped_column(INTEGER, nullable=True)
 
     created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the reading set was created
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the reading set was last altered
