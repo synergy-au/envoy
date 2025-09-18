@@ -40,7 +40,7 @@ from envoy_schema.server.schema.uri import (
 )
 from parse import parse  # type: ignore
 
-from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
+from envoy.server.crud.site import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.exception import InvalidMappingError
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.common import generate_href, remove_href_prefix
@@ -466,7 +466,7 @@ class NotificationMapper:
                     "type": XSI_TYPE_END_DEVICE_LIST,
                     "all_": len(sites),
                     "results": len(sites),
-                    "EndDevice": [EndDeviceMapper.map_to_response(scope, s, disable_registration) for s in sites],
+                    "EndDevice": [EndDeviceMapper.map_to_response(scope, s, disable_registration, 0) for s in sites],
                 },
             }
         )
@@ -749,6 +749,7 @@ class NotificationMapper:
     @staticmethod
     def map_default_site_control_response(
         default_control: Optional[DefaultSiteControl],
+        der_program_id: int,
         pow10_multipier: int,
         sub: Subscription,
         scope: AggregatorRequestScope,
@@ -757,12 +758,14 @@ class NotificationMapper:
         """Turns a poll rate into a notification for a FunctionSetAssignmentsList"""
 
         default_der_control_href = generate_href(
-            DefaultDERControlUri, scope, site_id=scope.display_site_id, der_program_id=sub.resource_id
+            DefaultDERControlUri, scope, site_id=scope.display_site_id, der_program_id=der_program_id
         )
 
         resource_model: Optional[DefaultDERControl] = None
         if default_control is not None:
-            resource_model = DERControlMapper.map_to_default_response(scope, default_control, pow10_multipier)
+            resource_model = DERControlMapper.map_to_default_response(
+                scope, default_control, scope.display_site_id, der_program_id, pow10_multipier
+            )
             resource_model.type = XSI_TYPE_DEFAULT_DER_CONTROL
 
         return Notification.model_validate(

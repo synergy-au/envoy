@@ -21,7 +21,7 @@ from freezegun import freeze_time
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from envoy.server.crud.end_device import VIRTUAL_END_DEVICE_SITE_ID
+from envoy.server.crud.site import VIRTUAL_END_DEVICE_SITE_ID
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.doe import DERControlMapper
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
@@ -613,6 +613,7 @@ async def test_get_site_specific_default_doe(client: AsyncClient, uri_derc_defau
 
     parsed_response: DefaultDERControl = DefaultDERControl.from_xml(body)
 
+    assert parsed_response.href == path
     assert (
         parsed_response.DERControlBase_.opModImpLimW.value
         != DERControlMapper.map_to_active_power(

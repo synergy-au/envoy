@@ -348,6 +348,8 @@ async def test_create_or_update_mirror_usage_point_update(
     mmr1 = generate_class_instance(
         MirrorMeterReadingRequest,
         mRID=force_case(force_upper_case, "10000000000000000000000000000aBc"),  # matches SiteReadingType 1
+        description="MMR 1",
+        version=101,
         readingType=generate_class_instance(
             ReadingType,
             dataQualifier=2,
@@ -358,6 +360,7 @@ async def test_create_or_update_mirror_usage_point_update(
             phase=64,
             powerOfTenMultiplier=3,
             intervalLength=0,
+            commodity=2,
         ),  # Matches SiteReadingType #1 perfectly so no update required
         reading=reading1,
     )
@@ -383,6 +386,9 @@ async def test_create_or_update_mirror_usage_point_update(
         seed=505,
         mRID=force_case(force_upper_case, "10000000000000000000000000000Def"),  # For updating group #1
         roleFlags="12" if update_role_flags else "1",
+        description="MUP 1",
+        version=102,
+        status=1,
         deviceLFDI=force_case(force_upper_case, "site1-lfdi"),
         mirrorMeterReadings=[mmr1, mmr_new, mmr5],
     )
@@ -407,28 +413,30 @@ async def test_create_or_update_mirror_usage_point_update(
         new_count_of_srts = (await session.execute(select(func.count()).select_from(SiteReadingType))).scalar_one()
         assert new_count_of_srts == original_count_of_srts + 1, "Should've added one SiteReadingType for our 3 MMRs"
 
-        if update_role_flags:
-            # We're lazy and archive the two current MMRs in place for the roleFlags
-            # and then another time for the updated SiteReadingType on mmr5
-            assert 3 == (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
-        else:
-            # Just the updated SiteReadingType on mmr5
-            assert 1 == (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
-
         srt1 = (await session.execute(select(SiteReadingType).where(SiteReadingType.mrid == mmr1.mRID))).scalar_one()
         srt_new = (
             await session.execute(select(SiteReadingType).where(SiteReadingType.mrid == mmr_new.mRID))
         ).scalar_one()
         srt5 = (await session.execute(select(SiteReadingType).where(SiteReadingType.mrid == mmr5.mRID))).scalar_one()
 
-        assert srt1.changed_time == datetime(
-            2022, 5, 6, 11, 22, 33, 500000, tzinfo=timezone.utc
-        ), "Unchanged from base config"
-        assert srt1.created_time == datetime(2000, 1, 1, tzinfo=timezone.utc), "Unchanged from base config"
         assert_nowish(srt_new.changed_time)
         assert_nowish(srt_new.created_time)
-        assert_nowish(srt5.changed_time)
+        assert srt1.created_time == datetime(2000, 1, 1, tzinfo=timezone.utc), "Unchanged from base config"
         assert srt5.created_time == datetime(2000, 1, 1, tzinfo=timezone.utc), "Unchanged from base config"
+        assert_nowish(srt5.changed_time)
+
+        if update_role_flags:
+            # We're lazy and archive the two current MMRs in place for the roleFlags
+            # and then another time for the updated SiteReadingType on mmr5
+            assert 3 == (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
+            assert_nowish(srt1.changed_time)
+
+        else:
+            # Just the updated SiteReadingType on mmr5
+            assert 1 == (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
+            assert srt1.changed_time == datetime(
+                2022, 5, 6, 11, 22, 33, 500000, tzinfo=timezone.utc
+            ), "Unchanged from base config"
 
         # Spot check a few values - make sure we properly group everything. Mapper tests do this in more detail
         for db_srt, mmr in zip([srt1, srt_new, srt5], [mmr1, mmr_new, mmr5]):
@@ -467,6 +475,122 @@ async def test_create_or_update_mirror_usage_point_update(
             assert_nowish(db_reading.created_time)
             assert db_reading.value == src_reading.value
             assert db_reading.local_id == int(src_reading.localID, 16)
+
+
+@pytest.mark.parametrize(
+    "update_description, update_status, update_version",
+    [(True, True, True), (True, False, False), (False, True, False), (False, False, True), (False, False, False)],
+)
+@pytest.mark.anyio
+async def test_create_or_update_mirror_usage_point_update_non_role_flags(
+    pg_base_config, update_description: bool, update_status: bool, update_version: bool
+):
+    """Submitting a new MUP should update a MUP's fields (not just roleFlags) - eg description, status, version"""
+
+    # Identical to SiteReadingType #1
+    mmr1 = generate_class_instance(
+        MirrorMeterReadingRequest,
+        mRID="10000000000000000000000000000aBc",  # matches SiteReadingType 1
+        description="MMR 1",
+        version=101,
+        readingType=generate_class_instance(
+            ReadingType,
+            dataQualifier=2,
+            uom=38,
+            flowDirection=1,
+            accumulationBehaviour=3,
+            kind=37,
+            phase=64,
+            powerOfTenMultiplier=3,
+            intervalLength=0,
+            commodity=2,
+        ),  # Matches SiteReadingType #1 perfectly so no update required
+    )
+
+    # Identical to SiteReadingType #5
+    mmr5 = generate_class_instance(
+        MirrorMeterReadingRequest,
+        mRID="50000000000000000000000000000aBc",  # matches SiteReadingType 5
+        description="MMR 5",
+        version=501,
+        readingType=generate_class_instance(
+            ReadingType,
+            dataQualifier=2,
+            uom=38,
+            flowDirection=19,
+            accumulationBehaviour=3,
+            kind=37,
+            phase=64,
+            powerOfTenMultiplier=3,
+            intervalLength=0,
+            commodity=0,
+        ),  # Matches SiteReadingType #5 perfectly so no update required
+    )
+
+    mup = generate_class_instance(
+        MirrorUsagePoint,
+        seed=505,
+        mRID="10000000000000000000000000000Def",  # For updating group #1
+        roleFlags="1",  # no update
+        description="UPDATED MUP 1" if update_description else "MUP 1",
+        version=123 if update_version else 102,
+        status=2 if update_status else 1,
+        deviceLFDI="site1-lfdi",
+        mirrorMeterReadings=[mmr1, mmr5],
+    )
+    has_any_update = update_description or update_status or update_version
+    async with generate_async_session(pg_base_config) as session:
+        original_count_of_srts = (await session.execute(select(func.count()).select_from(SiteReadingType))).scalar_one()
+
+    async with generate_async_session(pg_base_config) as session:
+        result = await MirrorMeteringManager.create_or_update_mirror_usage_point(
+            session,
+            generate_class_instance(
+                MUPRequestScope, source=CertificateType.AGGREGATOR_CERTIFICATE, aggregator_id=1, site_id=None
+            ),
+            mup,
+        )
+        assert isinstance(result, UpsertMupResult)
+        assert result.created is False
+        assert isinstance(result.mup_id, int)
+        assert result.mup_id == 1, "We are updating group 1"
+
+    # Check the DB
+    async with generate_async_session(pg_base_config) as session:
+        new_count_of_srts = (await session.execute(select(func.count()).select_from(SiteReadingType))).scalar_one()
+        assert new_count_of_srts == original_count_of_srts, "We aren't adding any new MMRs"
+
+        srt1 = (
+            await session.execute(select(SiteReadingType).where(SiteReadingType.site_reading_type_id == 1))
+        ).scalar_one()
+        srt5 = (
+            await session.execute(select(SiteReadingType).where(SiteReadingType.site_reading_type_id == 5))
+        ).scalar_one()
+
+        assert srt1.created_time == datetime(2000, 1, 1, tzinfo=timezone.utc), "Unchanged from base config"
+        assert srt5.created_time == datetime(2000, 1, 1, tzinfo=timezone.utc), "Unchanged from base config"
+
+        if has_any_update:
+            assert 0 < (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
+            assert_nowish(srt1.changed_time)
+            assert_nowish(srt5.changed_time)
+        else:
+            assert 0 == (await session.execute(select(func.count()).select_from(ArchiveSiteReadingType))).scalar_one()
+            assert srt1.changed_time == datetime(
+                2022, 5, 6, 11, 22, 33, 500000, tzinfo=timezone.utc
+            ), "Unchanged from base config"
+            assert srt5.changed_time == datetime(
+                2022, 5, 6, 15, 22, 33, 500000, tzinfo=timezone.utc
+            ), "Unchanged from base config"
+
+        # Spot check the group values - make sure we properly group everything. Mapper tests do this in more detail
+        for db_srt in [srt1, srt5]:
+            assert db_srt.group_mrid.casefold() == mup.mRID.casefold()
+            assert db_srt.role_flags == MirrorUsagePointMapper.extract_role_flags(mup)
+            assert db_srt.group_id == result.mup_id
+            assert db_srt.group_description == mup.description
+            assert db_srt.group_status == mup.status
+            assert db_srt.group_version == mup.version
 
 
 @pytest.mark.anyio

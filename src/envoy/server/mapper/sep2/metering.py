@@ -45,6 +45,7 @@ class MirrorUsagePointMapper:
             and a.phase == b.phase
             and a.power_of_ten_multiplier == b.power_of_ten_multiplier
             and a.default_interval_seconds == b.default_interval_seconds
+            and a.commodity == b.commodity
         )
 
     @staticmethod
@@ -90,6 +91,18 @@ class MirrorUsagePointMapper:
             any_changes = True
             target.default_interval_seconds = src.default_interval_seconds
 
+        if target.commodity != src.commodity:
+            any_changes = True
+            target.commodity = src.commodity
+
+        if target.version != src.version:
+            any_changes = True
+            target.version = src.version
+
+        if target.description != src.description:
+            any_changes = True
+            target.description = src.description
+
         if any_changes:
             target.changed_time = changed_time
 
@@ -112,6 +125,9 @@ class MirrorUsagePointMapper:
         site_id: int,
         group_id: int,
         group_mrid: str,
+        group_description: Optional[str],
+        group_version: Optional[int],
+        group_status: Optional[int],
         role_flags: RoleFlagsType,
         changed_time: datetime,
     ) -> SiteReadingType:
@@ -174,8 +190,14 @@ class MirrorUsagePointMapper:
             role_flags=role_flags,
             changed_time=changed_time,
             mrid=mmr.mRID,
+            description=mmr.description,
+            version=mmr.version,
+            commodity=rt.commodity,
             group_id=group_id,
             group_mrid=group_mrid,
+            group_description=group_description,
+            group_version=group_version,
+            group_status=group_status,
         )
 
     @staticmethod
@@ -194,11 +216,15 @@ class MirrorUsagePointMapper:
                 "postRate": postrate_seconds,
                 "roleFlags": to_hex_binary(group.role_flags),
                 "serviceCategoryKind": ServiceKind.ELECTRICITY,
-                "status": 0,
+                "status": 0 if group.group_status is None else group.group_status,
+                "description": group.group_description,
+                "version": group.group_version,
                 "mRID": group.group_mrid,
                 "mirrorMeterReadings": [
                     {
                         "mRID": srt.mrid,
+                        "description": srt.description,
+                        "version": srt.version,
                         "readingType": {
                             "accumulationBehaviour": srt.accumulation_behaviour,
                             "dataQualifier": srt.data_qualifier,
@@ -208,6 +234,7 @@ class MirrorUsagePointMapper:
                             "phase": srt.phase,
                             "powerOfTenMultiplier": srt.power_of_ten_multiplier,
                             "uom": srt.uom,
+                            "commodity": srt.commodity,
                         },
                     }
                     for srt in srts

@@ -11,21 +11,24 @@ from envoy_schema.server.schema.sep2.end_device import (
     EndDeviceResponse,
     RegistrationResponse,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.notification.manager.notification import NotificationManager
 from envoy.server.crud.archive import copy_rows_into_archive
-from envoy.server.crud.end_device import (
+from envoy.server.crud.site import (
     delete_site_for_aggregator,
     get_virtual_site_for_aggregator,
+    insert_site_for_aggregator,
     select_aggregator_site_count,
     select_all_sites_with_aggregator_id,
     select_single_site_with_lfdi,
     select_single_site_with_sfdi,
     select_single_site_with_site_id,
-    upsert_site_for_aggregator,
 )
-from envoy.server.exception import ForbiddenError, NotFoundError, UnableToGenerateIdError
+from envoy.server.crud.subscription import count_subscriptions_for_site
+from envoy.server.exception import ConflictError, ForbiddenError, NotFoundError, UnableToGenerateIdError
+from envoy.server.manager.function_set_assignments import FunctionSetAssignmentsManager
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
 from envoy.server.mapper.csip_aus.connection_point import ConnectionPointMapper
@@ -96,6 +99,8 @@ class EndDeviceManager:
 
         # site_id of 0 refers to a virtual end-device (associated with the aggregator)
         if scope.site_id is None:
+            subscription_count = await count_subscriptions_for_site(session, scope.aggregator_id, scope.site_id, None)
+
             site = await get_virtual_site_for_aggregator(
                 session=session,
                 aggregator_id=scope.aggregator_id,
@@ -104,7 +109,7 @@ class EndDeviceManager:
             )
             if site is None:
                 return None
-            return VirtualEndDeviceMapper.map_to_response(scope, site)
+            return VirtualEndDeviceMapper.map_to_response(scope, site, subscription_count)
         else:
             site = await select_single_site_with_site_id(
                 session=session, site_id=scope.site_id, aggregator_id=scope.aggregator_id
@@ -112,8 +117,12 @@ class EndDeviceManager:
             if site is None:
                 return None
 
+            fsa_count = len(
+                await FunctionSetAssignmentsManager.fetch_distinct_function_set_assignment_ids(session, datetime.min)
+            )
+
             config = await RuntimeServerConfigManager.fetch_current_config(session)
-            return EndDeviceMapper.map_to_response(scope, site, config.disable_edev_registration)
+            return EndDeviceMapper.map_to_response(scope, site, config.disable_edev_registration, fsa_count)
 
     @staticmethod
     async def delete_enddevice_for_scope(session: AsyncSession, scope: SiteRequestScope) -> bool:
@@ -165,15 +174,19 @@ class EndDeviceManager:
         return (None if a is None else a.lower()) == (None if b is None else b.lower())
 
     @staticmethod
-    async def add_or_update_enddevice_for_scope(
+    async def add_enddevice_for_scope(
         session: AsyncSession, scope: UnregisteredRequestScope, end_device: EndDeviceRequest
     ) -> int:
-        """This will add/update the specified end_device in the database.
+        """This will add the specified end_device in the database.
 
         If the sfdi is unspecified they will be populated using generate_unique_device_id.
 
         This request uses the raw request scope but will ensure that the scope has permission to access the supplied
-        site, raising ForbiddenError otherwise"""
+        site, raising ForbiddenError otherwise
+
+        Raises ConflictError if sfdi/lfdi-aggregator_id combination already exists.
+
+        """
         is_device_cert = scope.source == CertificateType.DEVICE_CERTIFICATE
         if is_device_cert:
             # This will happen for a site registration from a device cert
@@ -192,12 +205,20 @@ class EndDeviceManager:
             logger.info(f"add_or_update_enddevice_for_aggregator: generated sfdi {sfdi} and lfdi {lfdi}")
 
         logger.info(
-            f"add_or_update_enddevice_for_aggregator: upserting sfdi {end_device.sFDI} and lfdi {end_device.lFDI} for aggregator {scope.aggregator_id}"  # noqa e501
+            f"add_enddevice_for_aggregator: upserting sfdi {end_device.sFDI} and lfdi {end_device.lFDI} for aggregator {scope.aggregator_id}"  # noqa e501
         )
         changed_time = utc_now()
         registration_pin = RegistrationManager.generate_registration_pin()  # This will only apply to INSERTED sites
         site = EndDeviceMapper.map_from_request(end_device, scope.aggregator_id, changed_time, registration_pin)
-        result = await upsert_site_for_aggregator(session, scope.aggregator_id, site)
+        try:
+            result = await insert_site_for_aggregator(session, scope.aggregator_id, site)
+        except IntegrityError as exc:
+            logger.debug(exc)
+            raise ConflictError(
+                f"EndDevice with provided sFDI ({site.sfdi}) or lFDI ({site.lfdi})"
+                f"already exists for aggregator ({site.aggregator_id})."
+            )
+
         await session.commit()
 
         await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.SITE, changed_time)
@@ -214,7 +235,7 @@ class EndDeviceManager:
         )
         if site is None:
             return None
-        return ConnectionPointMapper.map_to_response(site)
+        return ConnectionPointMapper.map_to_response(scope, site)
 
     @staticmethod
     async def update_nmi_for_site(session: AsyncSession, scope: SiteRequestScope, nmi: Optional[str]) -> bool:
@@ -227,6 +248,10 @@ class EndDeviceManager:
         )
         if site is None:
             return False
+
+        # We treat this as a successful update - avoiding uneccessary writes.
+        if site.nmi == nmi:
+            return True
 
         # Ensure we archive the existing data
         await copy_rows_into_archive(session, Site, ArchiveSite, lambda q: q.where(Site.site_id == site.site_id))
@@ -256,6 +281,10 @@ class EndDeviceManager:
         """
         virtual_site: Optional[Site] = None
         includes_virtual_site = scope.source == CertificateType.AGGREGATOR_CERTIFICATE
+        subscription_count = 0  # This is lazily evaluated
+        fsa_count = len(
+            await FunctionSetAssignmentsManager.fetch_distinct_function_set_assignment_ids(session, datetime.min)
+        )  # The count of function set assignments is invariant to the EndDevice (in our implementation)
 
         # Include the aggregator virtual site?
         if includes_virtual_site:
@@ -268,6 +297,7 @@ class EndDeviceManager:
                         aggregator_lfdi=scope.lfdi,
                         post_rate_seconds=None,
                     )
+                    subscription_count = await count_subscriptions_for_site(session, scope.aggregator_id, None, None)
 
                 # Adjust limit to account for the virtual site
                 limit = max(0, limit - 1)
@@ -292,6 +322,8 @@ class EndDeviceManager:
             virtual_site=virtual_site,
             disable_registration=config.disable_edev_registration,
             pollrate_seconds=config.edevl_pollrate_seconds,
+            total_fsa_links=fsa_count,
+            total_subscription_links=subscription_count,
         )
 
 

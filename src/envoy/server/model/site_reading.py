@@ -3,6 +3,7 @@ from typing import Optional
 
 from envoy_schema.server.schema.sep2.types import (
     AccumulationBehaviourType,
+    CommodityType,
     DataQualifierType,
     FlowDirectionType,
     KindType,
@@ -55,6 +56,13 @@ class SiteReadingType(Base):
         INTEGER
     )  # If a batch of readings is received without an interval - this length will be used to describe the batch length
     role_flags: Mapped[RoleFlagsType] = mapped_column(INTEGER)
+
+    description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
+    group_description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
+    version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    group_version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    group_status: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    commodity: Mapped[Optional[CommodityType]] = mapped_column(INTEGER, nullable=True)
 
     created_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

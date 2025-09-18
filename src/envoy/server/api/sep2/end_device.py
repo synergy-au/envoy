@@ -5,7 +5,6 @@ import envoy_schema.server.schema.uri as uri
 from envoy_schema.server.schema.sep2.end_device import EndDeviceRequest
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi_async_sqlalchemy import db
-from sqlalchemy.exc import IntegrityError
 
 from envoy.server.api.error_handler import LoggedHttpException
 from envoy.server.api.request import (
@@ -15,7 +14,7 @@ from envoy.server.api.request import (
     extract_start_from_paging_param,
 )
 from envoy.server.api.response import LOCATION_HEADER_NAME, XmlRequest, XmlResponse
-from envoy.server.exception import BadRequestError, ForbiddenError, NotFoundError
+from envoy.server.exception import BadRequestError, ForbiddenError, NotFoundError, ConflictError
 from envoy.server.manager.end_device import EndDeviceManager, RegistrationManager
 from envoy.server.mapper.common import generate_href
 
@@ -127,15 +126,15 @@ async def create_end_device(
     """
     scope = extract_request_claims(request).to_unregistered_request_scope()
     try:
-        site_id = await EndDeviceManager.add_or_update_enddevice_for_scope(db.session, scope, payload)
+        site_id = await EndDeviceManager.add_enddevice_for_scope(db.session, scope, payload)
         location_href = generate_href(uri.EndDeviceUri, scope, site_id=site_id)
         return Response(status_code=HTTPStatus.CREATED, headers={LOCATION_HEADER_NAME: location_href})
     except BadRequestError as exc:
         raise LoggedHttpException(logger, exc, detail=exc.message, status_code=HTTPStatus.BAD_REQUEST)
     except ForbiddenError as exc:
         raise LoggedHttpException(logger, exc, detail=exc.message, status_code=HTTPStatus.FORBIDDEN)
-    except IntegrityError as exc:
-        raise LoggedHttpException(logger, exc, detail="lFDI conflict.", status_code=HTTPStatus.CONFLICT)
+    except ConflictError as exc:
+        raise LoggedHttpException(logger, exc, detail="lFDI or sFDI conflict.", status_code=HTTPStatus.CONFLICT)
 
 
 @router.head(uri.RegistrationUri)
