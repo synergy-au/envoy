@@ -1,4 +1,7 @@
 name: Create image and push to registry - on published release
+permissions:
+  contents: read
+  packages: write
 
 on:
   registry_package:
