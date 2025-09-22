@@ -6,7 +6,7 @@ on:
       - "v*"
 
 env: 
-  CR_NAME: ghcr.io
+  CR_NAME: ghcr.io/synergy-au
 
 jobs:
   create-images:

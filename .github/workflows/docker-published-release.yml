@@ -5,7 +5,7 @@ on:
     types: [published]
 
 env: 
-  CR_NAME: ghcr.io
+  CR_NAME: ghcr.io/synergy-au
 
 jobs:
   create-image:
