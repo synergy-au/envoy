@@ -1,14 +1,15 @@
-# This is a basic workflow to help you get started with Actions
-
-name: Create image and push to registry
+name: Create image and push to registry - on new tag
 
 on:
   push:
     tags:
       - "v*"
 
+env: 
+  CR_NAME: ghcr.io
+
 jobs:
-  create-image:
+  create-images:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,21 +18,22 @@ jobs:
         run: echo ::set-output name=tag::${GITHUB_REF#refs/tags/}
 
       - name: Checkout repo
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
-      - name: Login to Azure Docker
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.AZURE_LOGIN_SERVER }}
-          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
-          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v3
+        with: 
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push envoy Docker image
         run: |
-          echo $'{ "experimental": true, "features": { "buildkit" : true } }' | sudo tee /etc/docker/daemon.json
-          echo '${{ secrets.BSGIP_PAT }}' > ./github.pat
-          echo '${{ secrets.GITLAB_PAT }}' > ./gitlab.pat
-          sudo service docker restart
-          docker version -f '{{.Server.Experimental}}'
-          docker build -t ${{ secrets.AZURE_LOGIN_SERVER }}/envoy:${{ steps.vars.outputs.tag }} -f Dockerfile.server --secret id=github_pat,src=github.pat . --no-cache
-          docker push ${{ secrets.AZURE_LOGIN_SERVER }}/envoy:${{ steps.vars.outputs.tag }}
+          docker build -t ${{ env.CR_NAME }}/envoy:${{ steps.vars.outputs.tag }} -f Dockerfile.server . --no-cache
+          docker push ${{ env.CR_NAME }}/envoy:${{ steps.vars.outputs.tag }}
+
+      - name: Build and push init-db Docker image
+        run: |
+          cd ./demo/init-db 
+          docker build --build-arg ENVOY_TAG=${{ steps.vars.outputs.tag }} -t ${{ env.CR_NAME }}/envoy-init-db:${{ steps.vars.outputs.tag }} -f Dockerfile.build . --no-cache
+          docker push ${{ env.CR_NAME }}/envoy-init-db:${{ steps.vars.outputs.tag }}

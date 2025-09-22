@@ -1,0 +1,35 @@
+name: Create image and push to registry - on published release
+
+on:
+  registry_package:
+    types: [published]
+
+env: 
+  CR_NAME: ghcr.io
+
+jobs:
+  create-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v3
+        with: 
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push envoy Docker image
+        run: |
+          docker build -t ${{ env.CR_NAME }}/envoy:latest -f Dockerfile.server . --no-cache
+          docker push ${{ env.CR_NAME }}/envoy:latest
+
+      - name: Build and push init-db Docker image
+        run: |
+          cd ./demo/init-db 
+          docker build --build-arg ENVOY_TAG=latest -t ${{ env.CR_NAME }}/envoy-init-db:latest -f Dockerfile.build . --no-cache
+          docker push ${{ env.CR_NAME }}/envoy-init-db:latest
+
