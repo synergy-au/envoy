@@ -4,8 +4,8 @@ permissions:
   packages: write
 
 on:
-  registry_package:
-    types: [published]
+  release:
+    types: [released]
 
 env: 
   CR_NAME: ghcr.io/synergy-au
