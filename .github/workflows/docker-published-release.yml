@@ -27,9 +27,9 @@ jobs:
           docker build -t ${{ env.CR_NAME }}/envoy:latest -f Dockerfile.server . --no-cache
           docker push ${{ env.CR_NAME }}/envoy:latest
 
-      - name: Build and push init-db Docker image
+      - name: Build and push db-init Docker image
         run: |
-          cd ./demo/init-db 
-          docker build --build-arg ENVOY_TAG=latest -t ${{ env.CR_NAME }}/envoy-init-db:latest -f Dockerfile.build . --no-cache
-          docker push ${{ env.CR_NAME }}/envoy-init-db:latest
+          cd ./demo/db-init 
+          docker build --build-arg ENVOY_TAG=latest -t ${{ env.CR_NAME }}/envoy-db-init:latest -f Dockerfile.build . --no-cache
+          docker push ${{ env.CR_NAME }}/envoy-db-init:latest
 
