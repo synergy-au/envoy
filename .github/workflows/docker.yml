@@ -35,5 +35,5 @@ jobs:
       - name: Build and push db-init Docker image
         run: |
           cd ./demo/db-init 
-          docker build --build-arg ENVOY_TAG=${{ steps.vars.outputs.tag }} -t ${{ env.CR_NAME }}/envoy-db-init:${{ steps.vars.outputs.tag }} -f Dockerfile.build . --no-cache
+          docker build --build-arg ENVOY_TAG=${{ steps.vars.outputs.tag }} --buid-arg CR_NAME="${{ env.CR_NAME }}/" -t ${{ env.CR_NAME }}/envoy-db-init:${{ steps.vars.outputs.tag }} -f Dockerfile.build . --no-cache
           docker push ${{ env.CR_NAME }}/envoy-db-init:${{ steps.vars.outputs.tag }}

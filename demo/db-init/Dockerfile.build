@@ -1,5 +1,6 @@
 ARG ENVOY_TAG=latest
-FROM ghcr.io/envoy:${ENVOY_TAG}
+ARG CR_NAME="" 
+FROM ${CR_NAME}envoy:${ENVOY_TAG}
 
 WORKDIR /app/src/envoy/server/
 
