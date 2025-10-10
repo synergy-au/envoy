@@ -198,7 +198,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<ConnectionPoint xmlns=\"https://csipaus.org/ns\">\n    <connectionPointId>1111111111</connectionPointId>\n</ConnectionPoint>\n",
+							"raw": "<ConnectionPoint xmlns=\"https://csipaus.org/ns/v1.3-beta/storage\">\n    <connectionPointId>1111111111</connectionPointId>\n</ConnectionPoint>\n",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1337,7 +1337,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERAvailability\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<availabilityDuration>100</availabilityDuration>\n    <readingTime>1712286594</readingTime>\n\t<maxChargeDuration>2005</maxChargeDuration>\n\t<statVarAvail>\n\t\t<value>1000</value>\n\t\t<multiplier>1</multiplier>\n\t</statVarAvail>\n\t<statWAvail>\n\t\t<value>1000</value>\n\t\t<multiplier>1</multiplier>\n\t</statWAvail>\n</DERAvailability>",
+							"raw": "<DERAvailability\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<availabilityDuration>100</availabilityDuration>\n    <readingTime>1712286594</readingTime>\n\t<maxChargeDuration>2005</maxChargeDuration>\n\t<statVarAvail>\n\t\t<value>1000</value>\n\t\t<multiplier>1</multiplier>\n\t</statVarAvail>\n\t<statWAvail>\n\t\t<value>1000</value>\n\t\t<multiplier>1</multiplier>\n\t</statWAvail>\n</DERAvailability>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1410,7 +1410,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERCapability\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"https://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<modesSupported>1</modesSupported>\n    <rtgMaxW><value>4</value><multiplier>0</multiplier></rtgMaxW>\n\t<rtgAbnormalCategory>1</rtgAbnormalCategory>\n\t<type>5</type>\n\t<csipaus:doeModesSupported>1</csipaus:doeModesSupported>\n</DERCapability>",
+							"raw": "<DERCapability\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"https://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<modesSupported>1</modesSupported>\n    <rtgMaxW><value>4</value><multiplier>0</multiplier></rtgMaxW>\n\t<rtgAbnormalCategory>1</rtgAbnormalCategory>\n\t<type>5</type>\n\t<csipaus:doeModesSupported>1</csipaus:doeModesSupported>\n</DERCapability>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1483,7 +1483,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERSettings\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"https://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<modesEnabled>0</modesEnabled>\n\t<updatedTime>1715060552</updatedTime>\n\t<setMaxW>\n\t\t<value>1001</value>\n\t\t<multiplier>1</multiplier>\n\t</setMaxW>\n    <setGradW>1001</setGradW>\n\t<csipaus:doeModesEnabled>1</csipaus:doeModesEnabled>\n</DERSettings>",
+							"raw": "<DERSettings\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"https://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<modesEnabled>0</modesEnabled>\n\t<updatedTime>1715060552</updatedTime>\n\t<setMaxW>\n\t\t<value>1001</value>\n\t\t<multiplier>1</multiplier>\n\t</setMaxW>\n    <setGradW>1001</setGradW>\n\t<csipaus:doeModesEnabled>1</csipaus:doeModesEnabled>\n</DERSettings>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1556,7 +1556,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1600,7 +1600,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1679,7 +1679,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1721,7 +1721,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1765,7 +1765,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1808,7 +1808,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1852,7 +1852,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1896,7 +1896,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
@@ -1940,7 +1940,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
+							"raw": "<DERStatus\n\txmlns=\"urn:ieee:std:2030.5:ns\"\n\txmlns:csipaus=\"http://csipaus.org/ns/v1.3-beta/storage\"\n\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n\t<alarmStatus>1</alarmStatus>\n\t<genConnectStatus>\n\t\t<dateTime>1712287573</dateTime>\n\t\t<value>2</value>\n\t</genConnectStatus>\n\t<readingTime>1712287573</readingTime>\n</DERStatus>",
 							"options": {
 								"raw": {
 									"language": "xml"
