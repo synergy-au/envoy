@@ -53,7 +53,7 @@ dependencies = [
     "alembic",
     "tzlocal",
     "pydantic_xml[lxml]>=2.12.0",
-    "pydantic!=2.7.0",
+    "pydantic!=2.7.0,!=2.12.0",
     "pydantic-xml!=2.9.1,!=2.17.1", # Known compatibility issues with pydantic and typing libs
     "pydantic-settings",
     "python-dateutil",
@@ -68,7 +68,7 @@ dependencies = [
     "taskiq!=0.11.5,!=0.11.6",      # Known compatibiity issue with pydantic
     "taskiq-aio-pika",
     "parse",
-    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v0.27.0-storage.0.2.0",
+    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v0.27.0-storage.0.3.0",
     "intervaltree",
 ]
 
