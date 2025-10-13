@@ -20,7 +20,7 @@ from envoy.server.model.doe import SiteControlGroup
 # device certificates.
 AGG_CERT_PATH = os.environ.get("AGG_CERT_PATH", "/test_certs/testaggregator.crt")  # Aggregator Client
 
-# When entering the resulting aggregator certificate LFDI into the database, 
+# When entering the resulting aggregator certificate LFDI into the database,
 # use uppercase (True) or lowercase (False, Default)
 IS_CERTIFICATE_UPPERCASE = True if os.environ.get("IS_CERTIFICATE_UPPERCASE", "nothing").lower() == "true" else False
 
