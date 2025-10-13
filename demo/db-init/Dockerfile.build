@@ -4,7 +4,11 @@ FROM ${CR_NAME}envoy:${ENVOY_TAG}
 
 WORKDIR /app/src/envoy/server/
 
+# Path to the initial aggregator certificate
 ENV AGG_CERT_PATH="/test_certs/testaggregator.crt"
+
+# How to store aggregator certificates in the database
+ENV IS_CERTIFICATE_UPPERCASE="false"
 
 COPY --chmod=700 ./entrypoint.sh /entrypoint.sh
 COPY  ./init_db.py ./init_db.py

@@ -20,6 +20,10 @@ from envoy.server.model.doe import SiteControlGroup
 # device certificates.
 AGG_CERT_PATH = os.environ.get("AGG_CERT_PATH", "/test_certs/testaggregator.crt")  # Aggregator Client
 
+# When entering the resulting aggregator certificate LFDI into the database,
+# use uppercase (True) or lowercase (False, Default)
+IS_CERTIFICATE_UPPERCASE = True if os.environ.get("IS_CERTIFICATE_UPPERCASE", "nothing").lower() == "true" else False
+
 
 def load_cert(cert_path: str, now: datetime) -> Certificate:
     """Load certs, extract expiry and lfdi"""
@@ -29,6 +33,7 @@ def load_cert(cert_path: str, now: datetime) -> Certificate:
         cert_expiry = cert.not_valid_after_utc
     # Generate LFDI
     lfdi = LFDIAuthDepends.generate_lfdi_from_pem(cert_pem)
+    lfdi = lfdi.upper() if IS_CERTIFICATE_UPPERCASE else lfdi.lower()
     return Certificate(lfdi=lfdi, created=now, expiry=cert_expiry)
 
 
