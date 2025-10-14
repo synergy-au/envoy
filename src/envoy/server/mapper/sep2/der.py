@@ -400,12 +400,14 @@ class DERCapabilityMapper:
 
     @staticmethod
     def map_from_request(changed_time: datetime, der_cap: DERCapability) -> SiteDERRating:
-
+        vpp_modes_supported = (
+            VPPSupportedMode(int(der_cap.vppModesSupported, 16)) if der_cap.vppModesSupported else None
+        )
         m = SiteDERRating(
             modes_supported=DERControlType(int(der_cap.modesSupported, 16)),
             der_type=der_cap.type_,
             doe_modes_supported=DOESupportedMode(int(der_cap.doeModesSupported, 16)),
-            vpp_modes_supported=VPPSupportedMode(int(der_cap.vppModesSupported, 16)),
+            vpp_modes_supported=vpp_modes_supported,
             changed_time=changed_time,
             normal_category=der_cap.rtgNormalCategory,
             abnormal_category=der_cap.rtgAbnormalCategory,
