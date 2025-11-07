@@ -412,7 +412,7 @@ async def test_bad_der_setting_payload_400(
     client: AsyncClient,
     valid_headers: dict,
 ):
-    """Simple test of insert/update on DER Setting."""
+    """Test to make sure the expected response code (400) is sent for a bad hexbinary string."""
 
     der_id = PUBLIC_SITE_DER_ID
     site_id = 1
