@@ -88,10 +88,14 @@ def pg_empty_config(
 
     nmi_validation_marker = request.node.get_closest_marker("nmi_validation_enabled")
     if nmi_validation_marker is not None:
-        os.environ["nmi_validation_enabled"] = "true"
-        os.environ["nmi_validation_participant_id"] = nmi_validation_marker.args[0]
+        os.environ["NMI_VALIDATION_ENABLED"] = "true"
+        os.environ["NMI_VALIDATION_PARTICIPANT_ID"] = nmi_validation_marker.args[0]
     else:
-        os.environ["nmi_validation_enabled"] = "false"
+        os.environ["NMI_VALIDATION_ENABLED"] = "false"
+
+    allow_nmi_updates_marker = request.node.get_closest_marker("allow_nmi_updates")
+    if allow_nmi_updates_marker is not None:
+        os.environ["ALLOW_NMI_UPDATES"] = allow_nmi_updates_marker.args[0]
 
     exclude_endpoints_marker = request.node.get_closest_marker("exclude_endpoints")
     if exclude_endpoints_marker is not None:
