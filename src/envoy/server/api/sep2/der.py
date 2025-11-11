@@ -191,6 +191,11 @@ async def put_der_capability(
     Returns:
         fastapi.Response object.
     """
+    # Log the raw request body for debugging
+    # body = await request.body()
+    # logger.info(f"PUT DERCapability XML payload:\n{body.decode('utf-8')}")
+    # logger.info(f"Parsed DERCapability object: {payload}")
+
     try:
         await DERCapabilityManager.upsert_der_capability_for_site(
             db.session,

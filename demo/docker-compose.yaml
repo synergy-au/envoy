@@ -73,7 +73,7 @@ services:
       APP_MODULE: envoy.server.main:app
     depends_on:
       envoy-db:
-        condition: service_started
+        condition: service_healthy
       rabbit-mq:
         condition: service_healthy
 
@@ -92,7 +92,7 @@ services:
       APP_MODULE: envoy.admin.main:app
     depends_on:
       envoy-db:
-        condition: service_started
+        condition: service_healthy
       rabbit-mq:
         condition: service_healthy
 

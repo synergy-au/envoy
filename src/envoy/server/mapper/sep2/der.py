@@ -403,10 +403,13 @@ class DERCapabilityMapper:
         vpp_modes_supported = (
             VPPSupportedMode(int(der_cap.vppModesSupported, 16)) if der_cap.vppModesSupported else None
         )
+        doe_modes_supported = (
+            DOESupportedMode(int(der_cap.doeModesSupported, 16)) if der_cap.doeModesSupported else None
+        )
         m = SiteDERRating(
             modes_supported=DERControlType(int(der_cap.modesSupported, 16)),
             der_type=der_cap.type_,
-            doe_modes_supported=DOESupportedMode(int(der_cap.doeModesSupported, 16)),
+            doe_modes_supported=doe_modes_supported,
             vpp_modes_supported=vpp_modes_supported,
             changed_time=changed_time,
             normal_category=der_cap.rtgNormalCategory,
@@ -516,6 +519,8 @@ class DERSettingMapper:
     @staticmethod
     def map_from_request(changed_time: datetime, der_setting: DERSettings) -> SiteDERSetting:
         modes_enabled: Optional[DERControlType] = None
+        doe_modes_enabled: Optional[DERControlType] = None
+        vpp_modes_enabled: Optional[DERControlType] = None
         if der_setting.modesEnabled:
             modes_enabled = DERControlType(int(der_setting.modesEnabled, 16))
         if der_setting.doeModesEnabled:
