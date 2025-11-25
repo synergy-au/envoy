@@ -27,7 +27,7 @@ services:
     image: envoy:latest
     environment:
       <<: *common-env
-    command: taskiq worker envoy.notification.main:broker envoy.notification.task
+    command: taskiq worker envoy.notification.main:broker envoy.notification.task.check envoy.notification.task.transmit
     restart: unless-stopped
     networks:
       - envoy-net
