@@ -96,8 +96,11 @@ async def test_get_function_set_assignments_list(
 
     parsed_response: FunctionSetAssignmentsListResponse = FunctionSetAssignmentsListResponse.from_xml(body)
     assert parsed_response.href == fsal_url.split("?")[0]
-    assert len(parsed_response.FunctionSetAssignments) == len(expected_fsa_ids)
-    assert expected_fsa_ids == [int(fsa.href.split("/")[-1]) for fsa in parsed_response.FunctionSetAssignments]
+    if parsed_response.FunctionSetAssignments is None:
+        assert len(expected_fsa_ids) == 0, "expected parsed_response.FunctionSetAssignments to be None"
+    else:
+        assert len(parsed_response.FunctionSetAssignments) == len(expected_fsa_ids)
+        assert expected_fsa_ids == [int(fsa.href.split("/")[-1]) for fsa in parsed_response.FunctionSetAssignments]  # type: ignore  # noqa: 501
 
 
 @pytest.mark.anyio
