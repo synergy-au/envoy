@@ -258,6 +258,8 @@ class DERControlManager:
 
         if default_site_control is not None:
             return DefaultSiteControl(
+                version=default_site_control.version,
+                default_site_control_id=default_site_control.default_site_control_id,
                 import_limit_active_watts=_prefer_left(
                     default_site_control.import_limit_active_watts, default_doe.import_limit_active_watts
                 ),
@@ -275,6 +277,7 @@ class DERControlManager:
                 ),
             )
         return DefaultSiteControl(
+            version=0,
             import_limit_active_watts=default_doe.import_limit_active_watts,
             export_limit_active_watts=default_doe.export_limit_active_watts,
             generation_limit_active_watts=default_doe.generation_limit_active_watts,
