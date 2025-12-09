@@ -48,6 +48,7 @@ from envoy.server.mapper.constants import PricingReadingType
 from envoy.server.mapper.csip_aus.doe import DefaultDERControl, DERControlMapper, DERProgramMapper
 from envoy.server.mapper.sep2.der import DERAvailabilityMapper, DERCapabilityMapper, DERSettingMapper, DERStatusMapper
 from envoy.server.mapper.sep2.end_device import EndDeviceMapper
+from envoy.server.mapper.sep2.function_set_assignments import FunctionSetAssignmentsMapper
 from envoy.server.mapper.sep2.metering import READING_SET_ALL_ID, MirrorMeterReadingMapper
 from envoy.server.mapper.sep2.pricing import TimeTariffIntervalMapper
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope, ArchiveSiteControlGroup
@@ -456,6 +457,7 @@ class NotificationMapper:
         poll_rate_seconds: int,
     ) -> Notification:
         """Turns a list of sites into a notification"""
+        edev_list_href = generate_href(EndDeviceListUri, scope)
         return Notification.model_validate(
             {
                 "subscribedResource": generate_href(EndDeviceListUri, scope),
@@ -463,6 +465,7 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_END_DEVICE_LIST,
+                    "href": edev_list_href,
                     "pollRate": poll_rate_seconds,
                     "all_": len(sites),
                     "results": len(sites),
@@ -492,6 +495,7 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_DER_CONTROL_LIST,
+                    "href": doe_list_href,
                     "all_": len(does),
                     "results": len(does),
                     "DERControl": [
@@ -518,6 +522,7 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_DER_PROGRAM_LIST,
+                    "href": group_list_href,
                     "all_": len(site_control_groups),
                     "results": len(site_control_groups),
                     "DERProgram": [
@@ -550,6 +555,7 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_READING_LIST,
+                    "href": reading_list_href,
                     "all_": len(readings),
                     "results": len(readings),
                     "Readings": [MirrorMeterReadingMapper.map_to_response(r) for r in readings],
@@ -583,6 +589,7 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_TIME_TARIFF_INTERVAL_LIST,
+                    "href": time_tariff_interval_list_href,
                     "all_": len(rates),
                     "results": len(rates),
                     "TimeTariffInterval": [
@@ -728,6 +735,7 @@ class NotificationMapper:
         sub: Subscription,
         scope: AggregatorRequestScope,
         notification_type: NotificationType,
+        new_fsa_ids: list[int],
     ) -> Notification:
         """Turns a poll rate into a notification for a FunctionSetAssignmentsList"""
 
@@ -739,9 +747,16 @@ class NotificationMapper:
                 "status": _map_to_notification_status(notification_type),
                 "resource": {
                     "type": XSI_TYPE_FUNCTION_SET_ASSIGNMENTS_LIST,
+                    "href": fsa_list_href,
                     "pollRate": poll_rate_seconds,
-                    "all_": 1,
-                    "results": 0,
+                    "all_": len(new_fsa_ids),
+                    "results": len(new_fsa_ids),
+                    "FunctionSetAssignments": [
+                        FunctionSetAssignmentsMapper.map_to_response_unscoped(
+                            scope, scope.display_site_id, fsa_id, None, None
+                        )
+                        for fsa_id in new_fsa_ids
+                    ],
                 },
             }
         )

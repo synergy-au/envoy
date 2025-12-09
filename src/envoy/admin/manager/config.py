@@ -110,7 +110,7 @@ class ConfigManager:
             return False
 
         if site.default_site_control is None:
-            site.default_site_control = DefaultSiteControl(changed_time=now, site_id=site.site_id)
+            site.default_site_control = DefaultSiteControl(changed_time=now, site_id=site.site_id, version=0)
         else:
             site.default_site_control.changed_time = now
 
@@ -137,6 +137,7 @@ class ConfigManager:
         if request.storage_target_watts is not None:
             site.default_site_control.storage_target_active_watts = request.storage_target_watts.value
 
+        site.default_site_control.version = site.default_site_control.version + 1
         await session.commit()
 
         await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.DEFAULT_SITE_CONTROL, now)
