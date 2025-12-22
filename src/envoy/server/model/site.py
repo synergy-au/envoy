@@ -33,7 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from envoy.server.model import Base
-from envoy.server.model.constants import DOE_DECIMAL_PLACES, PERCENT_DECIMAL_PLACES
+from envoy.server.model.constants import PERCENT_DECIMAL_PLACES
 
 
 class Site(Base):
@@ -74,9 +74,6 @@ class Site(Base):
         cascade="all, delete",
         passive_deletes=True,
     )  # What DER live underneath/behind this site
-    default_site_control: Mapped[Optional["DefaultSiteControl"]] = relationship(
-        back_populates="site", lazy="raise", passive_deletes=True, uselist=False
-    )  # The default DOE + other controls that apply to this site
 
     # NOTE: We're defining Default are set on a per Site basis
 
@@ -220,6 +217,8 @@ class SiteDERRating(Base):
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     der_type: Mapped[DERType] = mapped_column(INTEGER)
     doe_modes_supported: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage extension
     vpp_modes_supported: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
     site_der: Mapped["SiteDER"] = relationship(back_populates="site_der_rating", lazy="raise", single_parent=True)
@@ -279,8 +278,6 @@ class SiteDERSetting(Base):
     min_pf_under_excited_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     soft_grad_w: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
@@ -289,7 +286,11 @@ class SiteDERSetting(Base):
     v_ref_ofs_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_ref_ofs_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     doe_modes_enabled: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage extension
     vpp_modes_enabled: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
+    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
 
     site_der: Mapped["SiteDER"] = relationship(back_populates="site_der_setting", lazy="raise", single_parent=True)
     __table_args__ = (UniqueConstraint("site_der_id"),)  # Only one SiteDERSetting allowed per SiteDER)
@@ -388,41 +389,3 @@ class SiteLogEvent(Base):
     __table_args__ = (
         Index("site_log_event_site_id_created_time_log_event_id_idx", "site_id", "created_time", "log_event_id"),
     )
-
-
-# TODO: deally this would be in the model.doe module. This causes a circular import issue due to the relationship
-# mapping between Site and this model. The recommended solution is to use a type.TYPE_CHECKING if statement before the
-# imports. However, this causes an issue with the `assertical` testing package that needs to be looked into.
-class DefaultSiteControl(Base):
-    """Represents fields that map to a subset of the attributes defined in CSIP-AUS' DefaultDERControl resource.
-    This entity is linked to a Site."""
-
-    __tablename__ = "default_site_control"
-    default_site_control_id: Mapped[int] = mapped_column(INTEGER, primary_key=True)
-    site_id: Mapped[int] = mapped_column(ForeignKey("site.site_id", ondelete="CASCADE"), nullable=False, index=True)
-
-    created_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )  # When this record was created
-    changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-
-    version: Mapped[int] = mapped_column(INTEGER, server_default="0")  # Incremented whenever this record is changed
-
-    import_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
-    )  # Constraint on imported active power
-    export_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
-    )  # Constraint on exported active power
-    generation_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
-    )
-    load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True)
-    ramp_rate_percent_per_second: Mapped[Optional[int]] = mapped_column(nullable=True)  # hundredths of percent per sec
-
-    # Storage extension
-    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
-    )
-
-    site: Mapped["Site"] = relationship(back_populates="default_site_control", lazy="raise")
