@@ -202,9 +202,9 @@ async def test_get_all_does(
 @pytest.mark.parametrize(
     "site_control_group_id, expected",
     [
-        (1, (Decimal("10.10"), Decimal("9.99"), Decimal("8.88"), Decimal("7.77"))),
+        (1, (Decimal("10.10"), Decimal("9.99"), Decimal("8.88"), Decimal("7.77"), Decimal("5.55"))),
         (2, None),
-        (3, (Decimal("20.20"), Decimal("19.19"), Decimal("18.18"), Decimal("17.17"))),
+        (3, (Decimal("20.20"), Decimal("19.19"), Decimal("18.18"), Decimal("17.17"), Decimal("15.15"))),
         (99, None),
     ],
 )
@@ -247,6 +247,7 @@ async def test_get_and_update_site_control_default(
             config.server_default_export_limit_watts,
             config.server_default_generation_limit_watts,
             config.server_default_load_limit_watts,
+            config.server_default_storage_target_watts,
         )
 
     # now do an update for certain fields
@@ -256,6 +257,7 @@ async def test_get_and_update_site_control_default(
         generation_limit_watts=None,
         load_limit_watts=None,
         ramp_rate_percent_per_second=None,
+        storage_target_watts=UpdateDefaultValue(value=Decimal("22.22")),
     )
     resp = await admin_client_auth.post(
         SiteControlGroupDefaultUri.format(group_id=site_control_group_id), content=config_request.model_dump_json()
@@ -274,18 +276,20 @@ async def test_get_and_update_site_control_default(
     else:
         assert resp.status_code == HTTPStatus.OK
         body = read_response_body_string(resp)
-        config: SiteControlGroupDefaultResponse = SiteControlGroupDefaultResponse(**json.loads(body))
+        config: SiteControlGroupDefaultResponse = SiteControlGroupDefaultResponse(**json.loads(body))  # type: ignore
 
         assert (
             None,
             Decimal("1.11"),
             expected[2] if expected is not None else None,
             expected[3] if expected is not None else None,
+            Decimal("22.22"),
         ) == (
             config.server_default_import_limit_watts,
             config.server_default_export_limit_watts,
             config.server_default_generation_limit_watts,
             config.server_default_load_limit_watts,
+            config.server_default_storage_target_watts,
         )
 
         # Version number in the DB should be getting updated
@@ -304,9 +308,10 @@ async def test_get_and_update_site_control_default(
             archive_records = (await session.execute(select(ArchiveSiteControlGroupDefault))).scalars().all()
             if default_exists:
                 assert len(archive_records) == 1
-                assert archive_records[0].import_limit_active_watts == expected[0]
-                assert archive_records[0].export_limit_active_watts == expected[1]
-                assert archive_records[0].generation_limit_active_watts == expected[2]
-                assert archive_records[0].load_limit_active_watts == expected[3]
+                assert archive_records[0].import_limit_active_watts == expected[0]  # type: ignore[index]
+                assert archive_records[0].export_limit_active_watts == expected[1]  # type: ignore[index]
+                assert archive_records[0].generation_limit_active_watts == expected[2]  # type: ignore[index]
+                assert archive_records[0].load_limit_active_watts == expected[3]  # type: ignore[index]
+                assert archive_records[0].storage_target_active_watts == expected[4]  # type: ignore[index]
             else:
                 assert len(archive_records) == 0

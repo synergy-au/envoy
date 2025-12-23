@@ -107,6 +107,8 @@ class ArchiveSiteDERRating(ArchiveBase):
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     der_type: Mapped[DERType] = mapped_column(INTEGER)
     doe_modes_supported: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage Extension
     vpp_modes_supported: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
 
@@ -157,8 +159,6 @@ class ArchiveSiteDERSetting(ArchiveBase):
     min_pf_under_excited_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     soft_grad_w: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
@@ -167,7 +167,11 @@ class ArchiveSiteDERSetting(ArchiveBase):
     v_ref_ofs_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_ref_ofs_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     doe_modes_enabled: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage Extension
     vpp_modes_enabled: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
+    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
 
 
 class ArchiveSiteDERAvailability(ArchiveBase):

@@ -51,6 +51,11 @@ class ArchiveSiteControlGroupDefault(ArchiveBase):
     load_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True)
     ramp_rate_percent_per_second: Mapped[Optional[int]] = mapped_column(nullable=True)  # hundredths of percent per sec
 
+    # Storage extension
+    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
+        DECIMAL(16, DOE_DECIMAL_PLACES), nullable=True
+    )  # Constraint on storage active watts
+
 
 class ArchiveDynamicOperatingEnvelope(ArchiveBase):
     """Represents a dynamic operating envelope for a site at a particular time interval"""

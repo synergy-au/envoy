@@ -122,7 +122,7 @@ class SiteControlGroupManager:
             scg.site_control_group_default.ramp_rate_percent_per_second = ramp_rate_value
 
         if request.storage_target_watts is not None:
-            scg.default_site_control.storage_target_active_watts = request.storage_target_watts.value
+            scg.site_control_group_default.storage_target_active_watts = request.storage_target_watts.value
 
         scg.site_control_group_default.version = scg.site_control_group_default.version + 1
 
@@ -152,7 +152,7 @@ class SiteControlGroupManager:
             server_default_export_limit_watts=scg.site_control_group_default.export_limit_active_watts,
             server_default_generation_limit_watts=scg.site_control_group_default.generation_limit_active_watts,
             server_default_load_limit_watts=scg.site_control_group_default.load_limit_active_watts,
-            server_default_storage_target_watts=scg.storage_control_group_default.storage_target_watts,
+            server_default_storage_target_watts=scg.site_control_group_default.storage_target_active_watts,
             changed_time=scg.site_control_group_default.changed_time,
             created_time=scg.site_control_group_default.created_time,
         )
