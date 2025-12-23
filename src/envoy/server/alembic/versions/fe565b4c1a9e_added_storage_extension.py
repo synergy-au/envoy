@@ -53,11 +53,13 @@ def downgrade() -> None:
     op.drop_column("site_der_setting", "min_wh_value")
     op.drop_column("site_der_rating", "vpp_modes_supported")
     op.drop_column("dynamic_operating_envelope", "storage_target_active_watts")
-    op.drop_column("default_site_control", "storage_target_active_watts")
     op.drop_column("archive_site_der_setting", "vpp_modes_enabled")
     op.drop_column("archive_site_der_setting", "min_wh_multiplier")
     op.drop_column("archive_site_der_setting", "min_wh_value")
     op.drop_column("archive_site_der_rating", "vpp_modes_supported")
     op.drop_column("archive_dynamic_operating_envelope", "storage_target_active_watts")
-    op.drop_column("archive_default_site_control", "storage_target_active_watts")
     # ### end Alembic commands ###
+
+    # The following were entered to deal with an upstream change that removes these tables on main branch
+    op.execute(sa.text('ALTER TABLE "default_site_control" DROP COLUMN IF EXISTS "storage_target_active_watts"'))
+    op.execute(sa.text('ALTER TABLE "archive_default_site_control" DROP COLUMN IF EXISTS "storage_target_active_watts"'))
