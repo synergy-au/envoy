@@ -62,4 +62,6 @@ def downgrade() -> None:
 
     # The following were entered to deal with an upstream change that removes these tables on main branch
     op.execute(sa.text('ALTER TABLE "default_site_control" DROP COLUMN IF EXISTS "storage_target_active_watts"'))
-    op.execute(sa.text('ALTER TABLE "archive_default_site_control" DROP COLUMN IF EXISTS "storage_target_active_watts"'))
+    op.execute(
+        sa.text('ALTER TABLE "archive_default_site_control" DROP COLUMN IF EXISTS "storage_target_active_watts"')
+    )
