@@ -107,6 +107,8 @@ class ArchiveSiteDERRating(ArchiveBase):
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     der_type: Mapped[DERType] = mapped_column(INTEGER)
     doe_modes_supported: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage Extension
     vpp_modes_supported: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
 
 
@@ -157,8 +159,6 @@ class ArchiveSiteDERSetting(ArchiveBase):
     min_pf_under_excited_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     min_v_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     soft_grad_w: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_nom_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
@@ -167,7 +167,11 @@ class ArchiveSiteDERSetting(ArchiveBase):
     v_ref_ofs_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     v_ref_ofs_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
     doe_modes_enabled: Mapped[Optional[DOESupportedMode]] = mapped_column(INTEGER, nullable=True)
+
+    # Storage Extension
     vpp_modes_enabled: Mapped[Optional[VPPSupportedMode]] = mapped_column(INTEGER, nullable=True)
+    min_wh_value: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    min_wh_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
 
 
 class ArchiveSiteDERAvailability(ArchiveBase):
@@ -217,38 +221,3 @@ class ArchiveSiteDERStatus(ArchiveBase):
     storage_mode_status_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     storage_connect_status: Mapped[Optional[ConnectStatusType]] = mapped_column(INTEGER, nullable=True)
     storage_connect_status_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class ArchiveDefaultSiteControl(ArchiveBase):
-    """Represents fields that map to a subset of the attributes defined in CSIP-AUS' DefaultDERControl resource.
-    This entity is linked to a Site."""
-
-    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.site.DefaultSiteControl.__tablename__  # type: ignore
-    default_site_control_id: Mapped[int] = mapped_column(INTEGER, primary_key=True)
-    site_id: Mapped[int] = mapped_column(INTEGER)
-
-    created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-    version: Mapped[int] = mapped_column(INTEGER)  # Incremented whenever this record is changed
-
-    import_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )  # Constraint on imported active power
-    export_limit_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )  # Constraint on exported active/reactive power
-    generation_limit_active_watts: Mapped[Optional[Optional[Decimal]]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )
-    load_limit_active_watts: Mapped[Optional[Optional[Decimal]]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )
-    ramp_rate_percent_per_second: Mapped[Optional[int]] = mapped_column(
-        nullable=True
-    )  # Constraint on exported active/reactive power
-
-    # Storage extension
-    storage_target_active_watts: Mapped[Optional[Decimal]] = mapped_column(
-        DECIMAL(16, original_models.site.DOE_DECIMAL_PLACES), nullable=True
-    )
