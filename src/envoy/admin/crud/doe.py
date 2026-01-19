@@ -7,8 +7,12 @@ from sqlalchemy import Delete, and_, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.server.crud.archive import copy_rows_into_archive, delete_rows_into_archive
-from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
-from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup
+from envoy.server.model.archive.doe import (
+    ArchiveDynamicOperatingEnvelope,
+    ArchiveSiteControlGroup,
+    ArchiveSiteControlGroupDefault,
+)
+from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup, SiteControlGroupDefault
 
 
 @dataclass
@@ -360,3 +364,30 @@ async def select_all_site_control_groups(
 
     resp = await session.execute(stmt)
     return resp.scalars().all()
+
+
+async def delete_all_site_control_groups_into_archive(
+    session: AsyncSession,
+    deleted_time: datetime,
+) -> None:
+    """Deletes ALL SiteControlGroups and related entities, archiving them.
+
+    Delete order (due to FK constraints):
+    1. DynamicOperatingEnvelope (references SiteControlGroup)
+    2. SiteControlGroupDefault (SiteControlGroup)
+    3. SiteControlGroup (root)
+    4. FunctionSetAssignments (implicit - these are a column in SiteControlGroup)
+    """
+
+    # 1. Delete all DynamicOperatingEnvelopes (DERControls)
+    await delete_rows_into_archive(
+        session, DynamicOperatingEnvelope, ArchiveDynamicOperatingEnvelope, deleted_time, lambda q: q
+    )
+
+    # 2. Delete all SiteControlGroupDefaults (DefaultDERControls)
+    await delete_rows_into_archive(
+        session, SiteControlGroupDefault, ArchiveSiteControlGroupDefault, deleted_time, lambda q: q
+    )
+
+    # 3. Delete all SiteControlGroups (DERPrograms)
+    await delete_rows_into_archive(session, SiteControlGroup, ArchiveSiteControlGroup, deleted_time, lambda q: q)
