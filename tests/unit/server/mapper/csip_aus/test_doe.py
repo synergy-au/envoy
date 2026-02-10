@@ -381,7 +381,10 @@ def test_map_derp_doe_program_response_no_default_doe(scg_type: type[Union[SiteC
     assert result.ActiveDERControlListLink is not None
     assert isinstance(result.ActiveDERControlListLink, ListLink)
     assert result.ActiveDERControlListLink.href
-    assert result.DefaultDERControlLink is None
+    assert result.DefaultDERControlLink is not None
+    assert isinstance(result.DefaultDERControlLink, Link)
+    assert result.DefaultDERControlLink.href
+    assert f"/{site_control_group_id}" in result.DefaultDERControlLink.href
     assert f"/{site_control_group_id}" in result.href
 
 
@@ -476,11 +479,8 @@ def test_map_derp_doe_program_list_response(
         assert_list_type(DERProgramResponse, result.DERProgram, len(control_groups_with_counts))
         for derp, (group, group_count) in zip(result.DERProgram, control_groups_with_counts):
             derp.DERControlListLink.all_ == group_count
-            if group.site_control_group_default is not None:
-                assert derp.DefaultDERControlLink is not None
-                assert f"/{group.site_control_group_id}" in derp.DefaultDERControlLink.href
-            else:
-                assert derp.DefaultDERControlLink is None
+            assert derp.DefaultDERControlLink is not None
+            assert f"/{group.site_control_group_id}" in derp.DefaultDERControlLink.href
 
 
 def test_mrid_uniqueness():
