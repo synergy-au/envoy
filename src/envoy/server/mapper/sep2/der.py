@@ -567,6 +567,8 @@ class DERSettingMapper:
         m.v_nom_value, m.v_nom_multiplier = set_value_multiplier(der_setting.setVNom)
         m.v_ref_value, m.v_ref_multiplier = set_value_multiplier(der_setting.setVRef)
         m.v_ref_ofs_value, m.v_ref_ofs_multiplier = set_value_multiplier(der_setting.setVRefOfs)
+
+        # storage extension
         m.min_wh_value, m.min_wh_multiplier = set_value_multiplier(der_setting.setMinWh)
 
         return m
