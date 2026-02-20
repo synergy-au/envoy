@@ -18,7 +18,13 @@ from envoy_schema.server.schema.sep2.end_device import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from envoy.server.exception import ConflictError, ForbiddenError, NotFoundError, UnableToGenerateIdError, BadRequestError
+from envoy.server.exception import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UnableToGenerateIdError,
+    BadRequestError,
+)
 from envoy.server.manager.end_device import (
     MAX_REGISTRATION_PIN,
     EndDeviceManager,
