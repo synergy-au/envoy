@@ -23,7 +23,6 @@ from envoy.server.exception import (
     ForbiddenError,
     NotFoundError,
     UnableToGenerateIdError,
-    BadRequestError,
 )
 from envoy.server.manager.end_device import (
     MAX_REGISTRATION_PIN,
