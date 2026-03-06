@@ -41,3 +41,13 @@ async def test_get_device_capability(client: AsyncClient, cert: str, edev_count:
 
     assert parsed_response.MirrorUsagePointListLink is not None
     assert parsed_response.MirrorUsagePointListLink.all_ == mup_count
+
+
+@pytest.mark.anyio
+async def test_content_type_header_storage_extension(client: AsyncClient) -> None:
+    """Simple test to make sure correct content-type header sent"""
+    response = await client.get(uri.DeviceCapabilityUri, headers={cert_header: quote(DEVICE_UNREGISTERED_CERT)})
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    assert_response_header(response, HTTPStatus.OK, "application/sep+xml; csipaus=1.3-beta_storage")
