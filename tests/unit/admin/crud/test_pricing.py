@@ -151,6 +151,7 @@ async def test_update_single_tariff_component(pg_base_config):
             ),
             archive_data,
         )
+        assert archive_data.archive_time is not None
         assert_nowish(archive_data.archive_time)
         assert archive_data.deleted_time is None
 

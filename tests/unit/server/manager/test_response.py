@@ -839,6 +839,7 @@ async def test_create_response_for_scope_doe_created_normally_with_display_id(
 
     # Check the href looks valid and matches the new record in the DB
     assert isinstance(returned_href, str)
+    assert scope.href_prefix is not None
     assert returned_href.startswith(scope.href_prefix)
     response_id = int(returned_href.split("/")[-1])  # Assume LAST component of href is the DB ID
     assert response_set_type_to_href(ResponseSetType.SITE_CONTROLS) in returned_href
