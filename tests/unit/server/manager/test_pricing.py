@@ -1,7 +1,6 @@
 import unittest.mock as mock
 from datetime import datetime
 from itertools import product
-from typing import Optional
 
 import pytest
 from assertical.fake.generator import generate_class_instance
@@ -29,7 +28,7 @@ async def test_fetch_tariff_profile_list_counts_members(
     mock_select_tariff_count: mock.MagicMock,
     mock_select_all_tariffs: mock.MagicMock,
     mock_map_to_list_response: mock.MagicMock,
-    fsa_id: Optional[int],
+    fsa_id: int | None,
     n_tariffs: int,
 ):
     """Tests that the function correctly interrogates the counts for each list item returned and correctly passes
@@ -73,7 +72,7 @@ async def test_fetch_tariff_profile_list_counts_members(
     mock_map_to_list_response.assert_called_once()
     call_args = mock_map_to_list_response.call_args_list[0].args
     passed_scope, tariffs_with_rates, total_tariffs, mapped_fsa_id, poll_rate = call_args
-    assert list(tariffs_with_rates) == list(zip(all_tariffs, count_components, count_rates))
+    assert list(tariffs_with_rates) == list(zip(all_tariffs, count_components, count_rates, strict=False))
     assert total_tariffs == tariff_count
     assert mapped_fsa_id == fsa_id
     assert passed_scope is scope
@@ -122,6 +121,6 @@ async def test_fetch_rate_component_list_counts_members(
 
     # make sure we properly bundled up the resulting tariff + rate count tuples and passed it along to the mapper
     mock_map_to_list_response.assert_called_once_with(
-        scope, tariff_id, list(zip(all_components, count_rates)), count_components
+        scope, tariff_id, list(zip(all_components, count_rates, strict=False)), count_components
     )
     assert_mock_session(mock_session)

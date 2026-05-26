@@ -139,8 +139,8 @@ async def test_create_site_controls_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 2
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -152,6 +152,7 @@ async def test_create_site_controls_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content is not None
                 and f"{control_1.export_limit_watts}" in r.content
                 and f"{control_2.export_limit_watts}" in r.content
                 and f"{control_3.export_limit_watts}" not in r.content
@@ -167,6 +168,7 @@ async def test_create_site_controls_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and f"{control_1.export_limit_watts}" not in r.content
                 and f"{control_2.export_limit_watts}" not in r.content
                 and f"{control_3.export_limit_watts}" in r.content
@@ -182,6 +184,7 @@ async def test_create_site_controls_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription2_uri
+                and r.content
                 and f"{control_1.export_limit_watts}" not in r.content
                 and f"{control_2.export_limit_watts}" not in r.content
                 and f"{control_3.export_limit_watts}" in r.content
@@ -190,7 +193,7 @@ async def test_create_site_controls_with_active_subscription(
         )
         == 1
     ), "Only one notification (for sub2) should have the doe3 batch"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -233,6 +236,7 @@ async def test_supersede_site_control_with_active_subscription(
         start_time=datetime(2022, 5, 7, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         export_limit_watts=100,
     )
+    assert control_1.export_limit_watts is not None
 
     content = ",".join([d.model_dump_json() for d in [control_1]])
     resp = await admin_client_auth.post(
@@ -249,8 +253,8 @@ async def test_supersede_site_control_with_active_subscription(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -262,6 +266,7 @@ async def test_supersede_site_control_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and f"<value>{control_1.export_limit_watts * 100}</value>" in r.content  # Value of new DERControl
                 and "<currentStatus>0</currentStatus>" in r.content  # One DERControl is "scheduled"
                 and "<value>111</value>" in r.content  # Value of superseded DERControl
@@ -271,7 +276,7 @@ async def test_supersede_site_control_with_active_subscription(
         )
         == 1
     ), "Only one notification for the insertion and superseded record"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -322,8 +327,8 @@ async def test_create_does_with_paginated_notifications(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 2
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 2
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -334,7 +339,7 @@ async def test_create_does_with_paginated_notifications(
             [
                 r
                 for r in notifications_enabled.logged_requests
-                if r.uri == subscription1_uri and 'results="2"' in r.content
+                if r.content is not None and r.uri == subscription1_uri and 'results="2"' in r.content
             ]
         )
         == 1
@@ -345,12 +350,12 @@ async def test_create_does_with_paginated_notifications(
             [
                 r
                 for r in notifications_enabled.logged_requests
-                if r.uri == subscription1_uri and 'results="1"' in r.content
+                if r.content is not None and r.uri == subscription1_uri and 'results="1"' in r.content
             ]
         )
         == 1
     )
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -432,8 +437,8 @@ async def test_create_tariff_component_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription3_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -445,6 +450,7 @@ async def test_create_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<roleFlags>01</roleFlags>" in r.content
                 and "<roleFlags>02</roleFlags>" not in r.content
             ]
@@ -457,6 +463,7 @@ async def test_create_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription3_uri
+                and r.content
                 and "<roleFlags>01</roleFlags>" in r.content
                 and "<roleFlags>02</roleFlags>" not in r.content
             ]
@@ -554,8 +561,8 @@ async def test_update_tariff_component_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription3_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -567,6 +574,7 @@ async def test_update_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<roleFlags>03</roleFlags>" in r.content
                 and "<roleFlags>02</roleFlags>" not in r.content
             ]
@@ -579,6 +587,7 @@ async def test_update_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription3_uri
+                and r.content
                 and "<roleFlags>03</roleFlags>" in r.content
                 and "<roleFlags>02</roleFlags>" not in r.content
             ]
@@ -700,8 +709,8 @@ async def test_delete_tariff_component_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription3_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -713,6 +722,7 @@ async def test_delete_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<status>4</status>" in r.content
                 and "/edev/1/tp/1/rc/1" in r.content
                 and "/edev/2/tp/1/rc/1" not in r.content
@@ -726,6 +736,7 @@ async def test_delete_tariff_component_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription3_uri
+                and r.content
                 and "<status>4</status>" in r.content
                 and "/edev/1/tp/1/rc/1" not in r.content
                 and "/edev/2/tp/1/rc/1" in r.content
@@ -800,8 +811,8 @@ async def test_create_tariff_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 2
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -813,6 +824,7 @@ async def test_create_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<rateCode>mytariff1</rateCode>" in r.content
                 and "<rateCode>mytariff2</rateCode>" not in r.content
             ]
@@ -825,6 +837,7 @@ async def test_create_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<rateCode>mytariff1</rateCode>" not in r.content
                 and "<rateCode>mytariff2</rateCode>" in r.content
             ]
@@ -837,6 +850,7 @@ async def test_create_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription2_uri
+                and r.content
                 and "<rateCode>mytariff1</rateCode>" in r.content
                 and "<rateCode>mytariff2</rateCode>" not in r.content
             ]
@@ -910,8 +924,8 @@ async def test_update_tariff_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 2
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -923,6 +937,7 @@ async def test_update_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "/tp/1" in r.content
                 and "<rateCode>mytariff1</rateCode>" in r.content
                 and "<rateCode>mytariff3</rateCode>" not in r.content
@@ -936,6 +951,7 @@ async def test_update_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "/tp/3" in r.content
                 and "<rateCode>mytariff1</rateCode>" not in r.content
                 and "<rateCode>mytariff3</rateCode>" in r.content
@@ -949,6 +965,7 @@ async def test_update_tariff_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription2_uri
+                and r.content
                 and "/tp/1" in r.content
                 and "<rateCode>mytariff1</rateCode>" in r.content
                 and "<rateCode>mytariff3</rateCode>" not in r.content
@@ -1075,8 +1092,8 @@ async def test_create_rates_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -1088,6 +1105,7 @@ async def test_create_rates_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and f"<price>{rate_1.price_pow10_encoded}</price>" in r.content
                 and f"<price>{rate_2.price_pow10_encoded}</price>" not in r.content
                 and f"<price>{rate_3.price_pow10_encoded}</price>" not in r.content
@@ -1102,6 +1120,7 @@ async def test_create_rates_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription2_uri
+                and r.content
                 and f"<price>{rate_1.price_pow10_encoded}</price>" in r.content
                 and f"<price>{rate_2.price_pow10_encoded}</price>" not in r.content
                 and f"<price>{rate_3.price_pow10_encoded}</price>" not in r.content
@@ -1198,8 +1217,8 @@ async def test_delete_rates_with_active_subscription(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -1211,6 +1230,7 @@ async def test_delete_rates_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription1_uri
+                and r.content
                 and "<subscribedResource>/edev/1/tp/1/ctti</subscribedResource>" in r.content
                 and "<subscribedResource>/edev/1/tp/1/rc/1/tti</subscribedResource>" not in r.content
                 and "<price>1111</price>" in r.content
@@ -1226,6 +1246,7 @@ async def test_delete_rates_with_active_subscription(
                 r
                 for r in notifications_enabled.logged_requests
                 if r.uri == subscription2_uri
+                and r.content
                 and "<subscribedResource>/edev/1/tp/1/ctti</subscribedResource>" not in r.content
                 and "<subscribedResource>/edev/1/tp/1/rc/1/tti</subscribedResource>" in r.content
                 and "<price>1111</price>" in r.content
@@ -1278,11 +1299,11 @@ async def test_delete_site_with_active_subscription(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 2
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 2
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -1328,12 +1349,13 @@ async def test_update_server_config_edev_list_notification(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
+    assert notifications_enabled.logged_requests[0].content is not None
     assert f'pollRate="{edev_list_poll_rate}"' in notifications_enabled.logged_requests[0].content
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -1392,11 +1414,11 @@ async def test_update_server_config_fsa_notification(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.parametrize("none_fsa_value", [True, False])
@@ -1519,12 +1541,14 @@ async def test_update_server_config_derpl_notification(
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
-    assert all([f'pollRate="{derpl_poll_rate}"' in r.content for r in notifications_enabled.logged_requests])
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all(
+        [r.content and f'pollRate="{derpl_poll_rate}"' in r.content for r in notifications_enabled.logged_requests]
+    )
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.parametrize("none_derpl_value", [True, False])
@@ -1696,8 +1720,8 @@ async def test_create_site_control_groups_with_active_subscription(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -1708,7 +1732,8 @@ async def test_create_site_control_groups_with_active_subscription(
             [
                 r
                 for r in notifications_enabled.logged_requests
-                if r.uri == subscription2_uri
+                if r.content is not None
+                and r.uri == subscription2_uri
                 and str(primacy) in r.content
                 and "/edev/1/" not in r.content
                 and "/edev/2/derp/5" in r.content
@@ -1717,7 +1742,7 @@ async def test_create_site_control_groups_with_active_subscription(
         )
         == 1
     ), "Only one notification (for sub 2) should be for the new DERP (id 3) for site 2"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -1768,8 +1793,8 @@ async def test_create_site_control_groups_with_new_fsa(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -1780,7 +1805,8 @@ async def test_create_site_control_groups_with_new_fsa(
             [
                 r
                 for r in notifications_enabled.logged_requests
-                if r.uri == subscription1_uri
+                if r.content is not None
+                and r.uri == subscription1_uri
                 and "</FunctionSetAssignments>" in r.content
                 and f"/edev/1/fsa/{fsa_id}" not in r.content
                 and f"/edev/2/fsa/{fsa_id}" in r.content
@@ -1789,7 +1815,7 @@ async def test_create_site_control_groups_with_new_fsa(
         )
         == 1
     ), "Only one notification (for sub 2) should be for the new FSA for site 2"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
 
 
 @pytest.mark.anyio
@@ -1835,9 +1861,9 @@ async def test_create_site_control_groups_no_new_fsa(
     # Give any notifications a chance to propagate
     await asyncio.sleep(2)
 
-    assert (
-        len(notifications_enabled.logged_requests) == 0
-    ), "This is NOT a new fsa_id - There shouldn't be a notification"
+    assert len(notifications_enabled.logged_requests) == 0, (
+        "This is NOT a new fsa_id - There shouldn't be a notification"
+    )
 
 
 @pytest.mark.anyio
@@ -1888,8 +1914,8 @@ async def test_update_site_with_active_subscription(
     assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 1
     assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
 
-    assert all([HEADER_NOTIFICATION_ID in r.headers for r in notifications_enabled.logged_requests])
-    assert len(set([r.headers[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
         notifications_enabled.logged_requests
     ), "Expected unique notification ids for each request"
 
@@ -1900,9 +1926,12 @@ async def test_update_site_with_active_subscription(
             [
                 r
                 for r in notifications_enabled.logged_requests
-                if r.uri == subscription2_uri and str(post_rate_seconds) in r.content and "/edev/2" in r.content
+                if r.content is not None
+                and r.uri == subscription2_uri
+                and str(post_rate_seconds) in r.content
+                and "/edev/2" in r.content
             ]
         )
         == 1
     ), "Only one notification (for sub 2) should be for site 2"
-    assert all([r.headers.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])
+    assert all([r.headers_dict.get("Content-Type") == SEP_XML_MIME for r in notifications_enabled.logged_requests])

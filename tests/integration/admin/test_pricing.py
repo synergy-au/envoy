@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -184,7 +183,7 @@ async def test_update_tariff_component(
     # Before doing anything - snapshot the original value
     uri = TariffComponentUpdateUri.format(tariff_component_id=tariff_component_id)
     resp = await admin_client_auth.get(uri)
-    original_tc: Optional[TariffComponentResponse] = None
+    original_tc: TariffComponentResponse | None = None
     if resp.status_code == HTTPStatus.OK:
         original_tc = TariffComponentResponse(**json.loads(resp.content))
 
@@ -236,7 +235,7 @@ async def test_create_tariff_genrates_with_fetch(admin_client_auth: AsyncClient)
 
     assert rate_resp.ids == [8, 9], "We know that the DB sequence is set to 8 in base_config.sql"
 
-    for new_id, expected_genrate in zip(rate_resp.ids, [tariff_genrate_1, tariff_genrate_2]):
+    for new_id, expected_genrate in zip(rate_resp.ids, [tariff_genrate_1, tariff_genrate_2], strict=False):
         # Now refetch each newly created record
         resp = await admin_client_auth.get(TariffGeneratedRateUpdateUri.format(tariff_generated_rate_id=new_id))
         assert resp.status_code == HTTPStatus.OK

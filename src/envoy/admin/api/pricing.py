@@ -1,8 +1,7 @@
 import logging
 from http import HTTPStatus
-from typing import List
 
-from asyncpg.exceptions import CardinalityViolationError  # type: ignore
+from asyncpg.exceptions import CardinalityViolationError
 from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
@@ -32,11 +31,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get(TariffCreateUri, status_code=HTTPStatus.OK, response_model=List[TariffResponse])
+@router.get(TariffCreateUri, status_code=HTTPStatus.OK, response_model=list[TariffResponse])
 async def get_all_tariffs(
     start: list[int] = Query([0]),
     limit: list[int] = Query([5]),
-) -> List[TariffResponse]:
+) -> list[TariffResponse]:
     """Endpoint for a paginated list of TariffResponse Objects, ordered by changed_time datetime attribute (descending).
 
 
@@ -95,7 +94,7 @@ async def update_tariff(tariff_id: int, tariff: TariffRequest) -> None:
     try:
         await TariffManager.update_existing_tariff(db.session, tariff_id, tariff)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
 
 
 @router.get(TariffComponentUpdateUri, status_code=HTTPStatus.OK, response_model=TariffComponentResponse)
@@ -110,7 +109,7 @@ async def get_tariff_component(tariff_component_id: int) -> TariffComponentRespo
     try:
         return await TariffComponentManager.fetch_tariff_component(db.session, tariff_component_id)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
 
 
 @router.put(TariffComponentUpdateUri, status_code=HTTPStatus.NO_CONTENT, response_model=None)
@@ -125,7 +124,7 @@ async def update_tariff_component(tariff_component_id: int, tariff_component: Ta
     try:
         await TariffComponentManager.update_tariff_component(db.session, tariff_component_id, tariff_component)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
 
 
 @router.delete(TariffComponentUpdateUri, status_code=HTTPStatus.NO_CONTENT, response_model=None)
@@ -140,7 +139,7 @@ async def delete_tariff_component(tariff_component_id: int) -> None:
     try:
         await TariffComponentManager.delete_tariff_component(db.session, tariff_component_id)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
 
 
 @router.post(TariffComponentCreateUri, status_code=HTTPStatus.CREATED, response_model=BatchCreateResponse)
@@ -161,11 +160,11 @@ async def create_tariff_component(tariff_component: TariffComponentRequest, resp
 
         return BatchCreateResponse(ids=[tariff_component_id])
     except IntegrityError as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "tariff_id or site_id not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "tariff_id or site_id not found") from exc
 
 
 @router.post(TariffGeneratedRateCreateUri, status_code=HTTPStatus.CREATED, response_model=None)
-async def create_tariff_genrate(tariff_generates: List[TariffGeneratedRateRequest]) -> BatchCreateResponse:
+async def create_tariff_genrate(tariff_generates: list[TariffGeneratedRateRequest]) -> BatchCreateResponse:
     """Bulk creation of 'Tariff Generated Rates' associated with respective Tariffs (tariff_id) and Sites (site_id).
 
     Body:
@@ -178,10 +177,12 @@ async def create_tariff_genrate(tariff_generates: List[TariffGeneratedRateReques
         return await TariffGeneratedRateManager.add_many_tariff_genrate(db.session, tariff_generates)
 
     except CardinalityViolationError as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "The request contains duplicate instances")
+        raise LoggedHttpException(
+            logger, exc, HTTPStatus.BAD_REQUEST, "The request contains duplicate instances"
+        ) from exc
 
     except IntegrityError as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "tariff_id or site_id not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "tariff_id or site_id not found") from exc
 
 
 @router.get(TariffGeneratedRateUpdateUri, status_code=HTTPStatus.OK, response_model=TariffGeneratedRateResponse)
@@ -196,7 +197,7 @@ async def get_tariff_genrate(tariff_generated_rate_id: int) -> TariffGeneratedRa
     try:
         return await TariffGeneratedRateManager.fetch_tariff_generated_rate(db.session, tariff_generated_rate_id)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
 
 
 @router.delete(TariffGeneratedRateUpdateUri, status_code=HTTPStatus.NO_CONTENT, response_model=None)
@@ -211,4 +212,4 @@ async def delete_tariff_genrate(tariff_generated_rate_id: int) -> None:
     try:
         return await TariffGeneratedRateManager.cancel_tariff_generated_rate(db.session, tariff_generated_rate_id)
     except NoResultFound as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found")
+        raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc

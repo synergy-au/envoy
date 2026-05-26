@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from itertools import product
-from typing import Callable
+from typing import no_type_check
 
 import pytest
 from assertical.fake.generator import generate_class_instance
@@ -94,6 +95,7 @@ def test_encode_mrid_stable_values(mrid_type, id, iana_pen):
     assert encode_mrid(mrid_type, id, iana_pen) == encode_mrid(mrid_type, id, iana_pen)
 
 
+@no_type_check
 def test_encode_mrid_unique_values():
     """All values of MridType enum should generate valid mrids that are distinct from eachother"""
 
@@ -117,6 +119,7 @@ def test_encode_mrid_unique_values():
     assert len(all_generated_mrids) == len(set(all_generated_mrids)), "All values should be unique"
 
 
+@no_type_check
 def test_encode_mrid_out_of_range_values():
     """Check encode_mrid raises ValueError on invalid values"""
 
@@ -141,6 +144,7 @@ def test_encode_mrid_out_of_range_values():
         encode_mrid(MAX_MRID_TYPE + 1, 0, 0)
 
 
+@no_type_check
 def test_all_default_encodings_unique():
     """Sanity check that all the encoding methods when called with default values will still return unique mrids (due
     to the mrid type)"""
@@ -334,7 +338,7 @@ def test_decode_and_validate_mrid_type():
     do_test(lambda s: MridMapper.encode_rate_component_mrid(s, 1, 2))
     do_test(lambda s: MridMapper.encode_time_tariff_interval_mrid(s, 1))
     do_test(lambda s: MridMapper.encode_tariff_profile_mrid(s, 1))
-    do_test(lambda s: MridMapper.encode_response_set_mrid(s, 1))
+    do_test(lambda s: MridMapper.encode_response_set_mrid(s, 1))  # ty:ignore[invalid-argument-type]
 
 
 @pytest.mark.parametrize("is_display_id, doe_id", product([True, False], [0, MAX_INT_32, MAX_INT_64, 123, 4]))

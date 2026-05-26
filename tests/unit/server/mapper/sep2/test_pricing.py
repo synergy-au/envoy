@@ -1,6 +1,5 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from itertools import product
-from typing import Optional, Union
 
 import pytest
 from assertical.asserts.type import assert_list_type
@@ -29,7 +28,7 @@ from envoy.server.mapper.sep2.pricing import (
 )
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
-from envoy.server.request_scope import DeviceOrAggregatorRequestScope
+from envoy.server.request_scope import DeviceOrAggregatorRequestScope, SiteRequestScope
 
 
 def test_tariff_profile_mapping():
@@ -41,6 +40,7 @@ def test_tariff_profile_mapping():
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=1001)
     mapped_all_set = TariffProfileMapper.map_to_response(scope, all_set, total_components, total_rates)
     assert mapped_all_set
+    assert mapped_all_set.href is not None
     assert f"/{scope.display_site_id}" in mapped_all_set.href
     assert mapped_all_set.pricePowerOfTenMultiplier == all_set.price_power_of_ten_multiplier
     assert mapped_all_set.primacyType == all_set.primacy
@@ -59,6 +59,7 @@ def test_tariff_profile_mapping():
     some_set = generate_class_instance(Tariff, seed=202, optional_is_none=True)
     mapped_some_set = TariffProfileMapper.map_to_response(scope, some_set, total_components, total_rates)
     assert mapped_some_set
+    assert mapped_some_set.href is not None
     assert f"/{scope.display_site_id}" in mapped_some_set.href
     assert mapped_some_set.pricePowerOfTenMultiplier == some_set.price_power_of_ten_multiplier
     assert mapped_some_set.primacyType == some_set.primacy
@@ -78,7 +79,7 @@ def test_tariff_profile_mapping():
 
 
 @pytest.mark.parametrize("optional_is_none, fsa_id", product([True, False], [1234321, None]))
-def test_tariff_profile_list_mapping(optional_is_none: bool, fsa_id: Optional[int]):
+def test_tariff_profile_list_mapping(optional_is_none: bool, fsa_id: int | None):
     """Non exhaustive test of the tariff profile list mapping - mainly to sanity check important fields and ensure
     that exceptions aren't being raised"""
     tariffs: list[Tariff] = [
@@ -94,10 +95,12 @@ def test_tariff_profile_list_mapping(optional_is_none: bool, fsa_id: Optional[in
     )
 
     mapped = TariffProfileMapper.map_to_list_response(
-        scope, zip(tariffs, tariff_component_counts, tariff_rate_counts), tariff_count, fsa_id, poll_rate
+        scope, zip(tariffs, tariff_component_counts, tariff_rate_counts, strict=False), tariff_count, fsa_id, poll_rate
     )
     assert isinstance(mapped, TariffProfileListResponse)
 
+    assert mapped.href is not None
+    assert scope.href_prefix is not None
     assert mapped.href.startswith(scope.href_prefix)
     if fsa_id is None:
         assert mapped.href.endswith(TariffProfileListUri.format(site_id=scope.display_site_id))
@@ -108,14 +111,26 @@ def test_tariff_profile_list_mapping(optional_is_none: bool, fsa_id: Optional[in
     assert mapped.results == 2
     assert mapped.pollRate == poll_rate
     assert_list_type(TariffProfileResponse, mapped.TariffProfile, 2)
-    assert all([f"/{scope.display_site_id}" in tp.href for tp in mapped.TariffProfile])
-    assert all([f"/{scope.display_site_id}" in tp.RateComponentListLink.href for tp in mapped.TariffProfile])
+    assert mapped.TariffProfile is not None
+    assert all(tp.href is not None and f"/{scope.display_site_id}" in tp.href for tp in mapped.TariffProfile)
+    assert all(
+        tp.RateComponentListLink is not None
+        and tp.RateComponentListLink.href is not None
+        and f"/{scope.display_site_id}" in tp.RateComponentListLink.href
+        for tp in mapped.TariffProfile
+    )
 
     # Double check our counts get handed down to the child lists correctly
     assert mapped.TariffProfile[0].CombinedTimeTariffIntervalListLink.all_ == tariff_rate_counts[0]
     assert mapped.TariffProfile[1].CombinedTimeTariffIntervalListLink.all_ == tariff_rate_counts[1]
-    assert mapped.TariffProfile[0].RateComponentListLink.all_ == tariff_component_counts[0]
-    assert mapped.TariffProfile[1].RateComponentListLink.all_ == tariff_component_counts[1]
+    assert (
+        mapped.TariffProfile[0].RateComponentListLink
+        and mapped.TariffProfile[0].RateComponentListLink.all_ == tariff_component_counts[0]
+    )
+    assert (
+        mapped.TariffProfile[1].RateComponentListLink
+        and mapped.TariffProfile[1].RateComponentListLink.all_ == tariff_component_counts[1]
+    )
 
 
 @pytest.mark.parametrize("optional_is_none", [True, False])
@@ -147,7 +162,7 @@ def test_rate_component_map_to_response(optional_is_none: bool):
 
 
 def test_rate_component_map_to_list_response():
-    scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=101, href_prefix="/pfx")
+    scope = generate_class_instance(SiteRequestScope, seed=101, href_prefix="/pfx")
     tcs = [
         generate_class_instance(TariffComponent, seed=202, optional_is_none=True),
         generate_class_instance(TariffComponent, seed=303, optional_is_none=False),
@@ -156,18 +171,21 @@ def test_rate_component_map_to_list_response():
     tariff_id = 5151968
     total_tcs = 97914
 
-    result = RateComponentMapper.map_to_list_response(scope, tariff_id, list(zip(tcs, total_rates)), total_tcs)
+    result = RateComponentMapper.map_to_list_response(
+        scope, tariff_id, list(zip(tcs, total_rates, strict=False)), total_tcs
+    )
     assert isinstance(result, RateComponentListResponse)
 
     assert result.href and result.href.startswith("/pfx")
     assert_list_type(RateComponentResponse, result.RateComponent, count=len(tcs))
     assert result.all_ == total_tcs
     assert result.results == len(tcs)
+    assert result.RateComponent is not None
 
     all_hrefs = [result.href]
-    for rc, expected_count in zip(result.RateComponent, total_rates):
+    for rc, expected_count in zip(result.RateComponent, total_rates, strict=False):
         assert rc.TimeTariffIntervalListLink.all_ == expected_count
-        all_hrefs.append(rc.href)
+        all_hrefs.append(rc.href or "")
         all_hrefs.append(rc.ReadingTypeLink.href)
         all_hrefs.append(rc.TimeTariffIntervalListLink.href)
 
@@ -177,7 +195,7 @@ def test_rate_component_map_to_list_response():
     product([True, False], [TariffGeneratedRate, ArchiveTariffGeneratedRate], [1, 2, 3]),
 )
 def test_consumption_tariff_interval_map_to_response(
-    optional_is_none: bool, type: Union[type[ArchiveTariffGeneratedRate], type[TariffGeneratedRate]], cti_id: int
+    optional_is_none: bool, type: type[ArchiveTariffGeneratedRate] | type[TariffGeneratedRate], cti_id: int
 ):
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=101, href_prefix="/pfx")
     rate = generate_class_instance(type, seed=202, optional_is_none=optional_is_none)
@@ -210,7 +228,7 @@ def test_consumption_tariff_interval_map_to_response(
     "optional_is_none, type", product([True, False], [TariffGeneratedRate, ArchiveTariffGeneratedRate])
 )
 def test_consumption_tariff_interval_map_to_list_response(
-    optional_is_none: bool, type: Union[type[ArchiveTariffGeneratedRate], type[TariffGeneratedRate]]
+    optional_is_none: bool, type: type[ArchiveTariffGeneratedRate] | type[TariffGeneratedRate]
 ):
     """Tests that the resulting object encodes all price blocks"""
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=101, href_prefix="/pfx")
@@ -222,6 +240,7 @@ def test_consumption_tariff_interval_map_to_list_response(
     if rate.block_1_start_pow10_encoded is None or rate.price_pow10_encoded_block_1 is None:
         assert mapped.all_ == 1
         assert mapped.results == 1
+        assert mapped.ConsumptionTariffInterval
         assert_list_type(ConsumptionTariffIntervalResponse, mapped.ConsumptionTariffInterval, count=1)
 
         assert mapped.ConsumptionTariffInterval[0].startValue == 0
@@ -229,6 +248,7 @@ def test_consumption_tariff_interval_map_to_list_response(
     else:
         assert mapped.all_ == 2
         assert mapped.results == 2
+        assert mapped.ConsumptionTariffInterval
         assert_list_type(ConsumptionTariffIntervalResponse, mapped.ConsumptionTariffInterval, count=2)
         assert mapped.ConsumptionTariffInterval[0].startValue == 0
         assert mapped.ConsumptionTariffInterval[0].price == rate.price_pow10_encoded
@@ -236,7 +256,12 @@ def test_consumption_tariff_interval_map_to_list_response(
         assert mapped.ConsumptionTariffInterval[1].startValue == rate.block_1_start_pow10_encoded
         assert mapped.ConsumptionTariffInterval[1].price == rate.price_pow10_encoded_block_1
 
-    assert mapped.href and mapped.href.startswith("/pfx")
+    assert (
+        mapped.href
+        and mapped.href.startswith("/pfx")
+        and mapped.ConsumptionTariffInterval
+        and mapped.ConsumptionTariffInterval[0].href
+    )
     assert mapped.ConsumptionTariffInterval[0].href.startswith("/pfx")
     assert mapped.ConsumptionTariffInterval[0].href != mapped.href
 
@@ -245,7 +270,7 @@ def test_consumption_tariff_interval_map_to_list_response(
     "optional_is_none, type", product([True, False], [TariffGeneratedRate, ArchiveTariffGeneratedRate])
 )
 def test_consumption_tariff_interval_map_to_summary_list_response(
-    optional_is_none: bool, type: Union[type[ArchiveTariffGeneratedRate], type[TariffGeneratedRate]]
+    optional_is_none: bool, type: type[ArchiveTariffGeneratedRate] | type[TariffGeneratedRate]
 ):
     """Tests that the resulting object is a singleton list"""
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=101, href_prefix="/pfx")
@@ -259,6 +284,7 @@ def test_consumption_tariff_interval_map_to_summary_list_response(
         assert mapped.results == 1
         assert_list_type(ConsumptionTariffIntervalResponse, mapped.ConsumptionTariffInterval, count=1)
 
+        assert mapped.ConsumptionTariffInterval and mapped.ConsumptionTariffInterval[0].href
         assert mapped.ConsumptionTariffInterval[0].startValue == 0
         assert mapped.ConsumptionTariffInterval[0].price == rate.price_pow10_encoded
         assert mapped.ConsumptionTariffInterval[0].href.startswith("/pfx")
@@ -266,6 +292,11 @@ def test_consumption_tariff_interval_map_to_summary_list_response(
         assert mapped.all_ == 2
         assert mapped.results == 2
         assert_list_type(ConsumptionTariffIntervalResponse, mapped.ConsumptionTariffInterval, count=2)
+        assert (
+            mapped.ConsumptionTariffInterval
+            and mapped.ConsumptionTariffInterval[0].href
+            and mapped.ConsumptionTariffInterval[1].href
+        )
         assert mapped.ConsumptionTariffInterval[0].startValue == 0
         assert mapped.ConsumptionTariffInterval[0].price == rate.price_pow10_encoded
         assert mapped.ConsumptionTariffInterval[0].href.startswith("/pfx")
@@ -288,7 +319,7 @@ def test_consumption_tariff_interval_map_to_summary_list_response(
 def test_time_tariff_interval_map_to_response(
     optional_is_none: bool,
     time_diff: timedelta,
-    type: Union[type[ArchiveTariffGeneratedRate], type[TariffGeneratedRate]],
+    type: type[ArchiveTariffGeneratedRate] | type[TariffGeneratedRate],
 ):
     """Non exhaustive test on TimeTariffInterval mapping - mainly to catch any validation issues"""
 
@@ -300,9 +331,9 @@ def test_time_tariff_interval_map_to_response(
     mapped = TimeTariffIntervalMapper.map_to_response(scope, now, rate)
     assert isinstance(mapped, TimeTariffIntervalResponse)
 
-    if type == ArchiveTariffGeneratedRate and rate.deleted_time is not None:
+    if type == ArchiveTariffGeneratedRate and rate.deleted_time is not None:  # ty:ignore[unresolved-attribute]
         assert mapped.EventStatus_.currentStatus == EventStatusType.Cancelled
-        assert mapped.EventStatus_.dateTime == int(rate.deleted_time.timestamp())
+        assert mapped.EventStatus_.dateTime == int(rate.deleted_time.timestamp())  # ty:ignore[unresolved-attribute]
     elif now < rate.start_time:
         assert mapped.EventStatus_.currentStatus == EventStatusType.Scheduled
         assert mapped.EventStatus_.dateTime == int(rate.changed_time.timestamp())
@@ -326,15 +357,19 @@ def test_time_tariff_interval_map_to_response(
         mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval,
         count=expected_consumption_blocks,
     )
-    mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[0].price == rate.price_pow10_encoded
-    mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[0].startValue == 0
+
+    assert mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval is not None
+    assert mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[0].price == rate.price_pow10_encoded
+    assert mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[0].startValue == 0
     if expected_consumption_blocks > 1:
-        mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[
-            1
-        ].price == rate.price_pow10_encoded_block_1
-        mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[
-            1
-        ].startValue == rate.block_1_start_pow10_encoded
+        assert (
+            mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[1].price
+            == rate.price_pow10_encoded_block_1
+        )
+        assert (
+            mapped.ConsumptionTariffIntervalListSummary.ConsumptionTariffInterval[1].startValue
+            == rate.block_1_start_pow10_encoded
+        )
 
     all_hrefs = [mapped.href, mapped.RateComponentLink.href, mapped.ConsumptionTariffIntervalListLink.href]
     for href in all_hrefs:
@@ -346,14 +381,14 @@ def test_time_tariff_interval_map_to_response(
 
 
 @pytest.mark.parametrize("tariff_component_id", [None, 716874614])
-def test_time_tariff_interval_map_to_list_response(tariff_component_id: Optional[int]):
+def test_time_tariff_interval_map_to_list_response(tariff_component_id: int | None):
     """Non exhaustive test on TimeTariffIntervalList mapping - mainly to catch any validation issues"""
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=1001, href_prefix="/pfx")
     rates: list[TariffGeneratedRate] = [
         generate_class_instance(TariffGeneratedRate, seed=101, optional_is_none=False),
         generate_class_instance(TariffGeneratedRate, seed=202, optional_is_none=True),
     ]
-    now = datetime(2022, 1, 5, tzinfo=timezone.utc)
+    now = datetime(2022, 1, 5, tzinfo=UTC)
     tariff_id = 198774112
     total = 63251
     poll_rate = 9871414
@@ -374,6 +409,7 @@ def test_time_tariff_interval_map_to_list_response(tariff_component_id: Optional
     assert "//" not in mapped.href
 
     assert_list_type(TimeTariffIntervalResponse, mapped.TimeTariffInterval, len(rates))
+    assert mapped.TimeTariffInterval is not None
     list_items_mrids = [x.mRID for x in mapped.TimeTariffInterval]
     assert len(list_items_mrids) == len(set(list_items_mrids)), "Checking all list items are unique"
 
@@ -381,7 +417,7 @@ def test_time_tariff_interval_map_to_list_response(tariff_component_id: Optional
 def test_mrid_uniqueness():
     """Test our mrid's for the mapped entities differ from each other despite sharing database ids"""
     id = 1
-    now = datetime(2026, 1, 4, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 4, tzinfo=UTC)
 
     tariff = generate_class_instance(Tariff)
     component = generate_class_instance(TariffComponent)

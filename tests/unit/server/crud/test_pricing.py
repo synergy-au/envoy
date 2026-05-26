@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from datetime import UTC, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -23,7 +22,7 @@ from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 
 AEST = timezone(timedelta(hours=10))
-UTC = timezone.utc
+UTC = UTC
 BASE = datetime(2000, 1, 1, tzinfo=UTC)  # Convenience - used a lot for initial creation times
 
 
@@ -70,7 +69,7 @@ async def test_select_tariff_count(pg_base_config):
         assert await select_tariff_count(session, datetime(2023, 1, 2, 12, 1, 3, tzinfo=UTC), 3) == 0
 
 
-def assert_tariff_by_id(expected_tariff_id: Optional[int], actual_tariff: Optional[Tariff]):
+def assert_tariff_by_id(expected_tariff_id: int | None, actual_tariff: Tariff | None):
     """Asserts tariff matches all values expected from a tariff with that id"""
     expected_currency_by_tariff_id = {
         1: 36,
@@ -107,7 +106,7 @@ def assert_tariff_by_id(expected_tariff_id: Optional[int], actual_tariff: Option
 )
 @pytest.mark.anyio
 async def test_select_all_tariffs(
-    pg_base_config, expected_ids: list[int], start: int, after: datetime, limit: int, fsa_id: Optional[int]
+    pg_base_config, expected_ids: list[int], start: int, after: datetime, limit: int, fsa_id: int | None
 ):
     """Tests that the returned tariffs match what's in the DB"""
     async with generate_async_session(pg_base_config) as session:
@@ -116,7 +115,7 @@ async def test_select_all_tariffs(
         assert [t.tariff_id for t in tariffs] == expected_ids
 
         # check contents of each entry
-        for id, tariff in zip(expected_ids, tariffs):
+        for id, tariff in zip(expected_ids, tariffs, strict=False):
             assert_tariff_by_id(id, tariff)
 
 
@@ -132,7 +131,7 @@ async def test_select_all_tariffs(
     ],
 )
 @pytest.mark.anyio
-async def test_select_single_tariff(pg_base_config, expected_id: Optional[int], requested_id: int):
+async def test_select_single_tariff(pg_base_config, expected_id: int | None, requested_id: int):
     """Tests that singular tariffs can be returned by id"""
     async with generate_async_session(pg_base_config) as session:
         tariff = await select_single_tariff(session, requested_id)
@@ -140,8 +139,8 @@ async def test_select_single_tariff(pg_base_config, expected_id: Optional[int], 
 
 
 def assert_tariff_component_for_id(
-    expected_tariff_component_id: Optional[int],
-    actual_tariff_component: Optional[TariffComponent],
+    expected_tariff_component_id: int | None,
+    actual_tariff_component: TariffComponent | None,
 ):
     """Asserts the supplied tariff component matches the expected values for a rate with that id (defined in
     base_config.sql)"""
@@ -150,7 +149,7 @@ def assert_tariff_component_for_id(
     else:
         assert isinstance(actual_tariff_component, TariffComponent)
         assert actual_tariff_component.tariff_component_id == expected_tariff_component_id
-        match (expected_tariff_component_id):
+        match expected_tariff_component_id:
             case 1:
                 assert actual_tariff_component.role_flags == 1
                 assert actual_tariff_component.accumulation_behaviour == 3
@@ -204,7 +203,7 @@ def assert_tariff_component_for_id(
     ],
 )
 @pytest.mark.anyio
-async def test_select_tariff_component_by_id(pg_base_config, requested_id: int, expected_id: Optional[int]):
+async def test_select_tariff_component_by_id(pg_base_config, requested_id: int, expected_id: int | None):
     async with generate_async_session(pg_base_config) as session:
         tariff_component = await select_tariff_component_by_id(session, requested_id)
         assert_tariff_component_for_id(expected_id, tariff_component)
@@ -231,7 +230,7 @@ async def test_select_and_count_tariff_components_by_tariff(
     pg_base_config,
     tariff_id: int,
     start: int,
-    changed_after: Optional[datetime],
+    changed_after: datetime | None,
     limit: int,
     expected_ids: list[int],
     expected_count: int,
@@ -243,13 +242,13 @@ async def test_select_and_count_tariff_components_by_tariff(
 
         tariff_components = await select_tariff_components_by_tariff(session, tariff_id, start, changed_after, limit)
         assert_list_type(TariffComponent, tariff_components, count=len(expected_ids))
-        for expected_id, tc in zip(expected_ids, tariff_components):
+        for expected_id, tc in zip(expected_ids, tariff_components, strict=False):
             assert_tariff_component_for_id(expected_id, tc)
 
 
 def assert_rate_for_id(
-    expected_rate_id: Optional[int],
-    actual_rate: Optional[Union[TariffGeneratedRate, ArchiveTariffGeneratedRate, None]],
+    expected_rate_id: int | None,
+    actual_rate: TariffGeneratedRate | ArchiveTariffGeneratedRate | None | None,
 ):
     """Asserts the supplied rate matches the expected values for a rate with that id - sourced from base_config.sql"""
     if expected_rate_id is None:
@@ -277,7 +276,7 @@ def assert_rate_for_id(
             assert actual_rate.price_pow10_encoded_block_1 == (expected_rate_id * 1000) + 1
 
         # Other things are specific to the individual records
-        match (expected_rate_id):
+        match expected_rate_id:
             case 1:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
@@ -326,14 +325,14 @@ def assert_rate_for_id(
                 assert actual_rate.site_id == 1
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 1, 6, tzinfo=AEST)
-                assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 30, 0, tzinfo=UTC)
+                assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 30, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
             case 9:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
                 assert actual_rate.site_id == 1
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 2, 34, tzinfo=AEST)
-                assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 35, 0, tzinfo=UTC)
+                assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 35, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
             case _:
                 raise Exception(f"Unexpected {expected_rate_id=}")
 
@@ -364,7 +363,7 @@ def assert_rate_for_id(
 )
 @pytest.mark.anyio
 async def test_select_tariff_generated_rate_include_deleted(
-    pg_additional_prices, agg_id: int, site_id: Optional[int], rate_id: int, expected_rate_id: Optional[int]
+    pg_additional_prices, agg_id: int, site_id: int | None, rate_id: int, expected_rate_id: int | None
 ):
 
     async with generate_async_session(pg_additional_prices) as session:
@@ -383,7 +382,7 @@ async def test_select_tariff_generated_rate_include_deleted(
 )
 @pytest.mark.anyio
 async def test_select_tariff_generated_rate_for_scope_la_timezone(
-    pg_la_timezone, pg_additional_prices, agg_id: int, site_id: Optional[int], rate_id: int
+    pg_la_timezone, pg_additional_prices, agg_id: int, site_id: int | None, rate_id: int
 ):
     async with generate_async_session(pg_la_timezone) as session:
         actual = await select_tariff_generated_rate_include_deleted(session, agg_id, site_id, rate_id)
@@ -432,11 +431,11 @@ async def test_select_and_count_active_rates_include_deleted(
     expected_ids: list[int],
     expected_count: int,
     tariff_id: int,
-    tariff_component_id: Optional[int],
+    tariff_component_id: int | None,
     site_id: int,
     now: datetime,
     start: int,
-    changed_after: Optional[datetime],
+    changed_after: datetime | None,
     limit: int,
 ):
     """Tests that count_active_rates_include_deleted and select_active_rates_include_deleted both handle archives
@@ -459,7 +458,7 @@ async def test_select_and_count_active_rates_include_deleted(
         )
 
         assert expected_ids == [r.tariff_generated_rate_id for r in actual_rates]
-        for actual_rate, expected_id in zip(actual_rates, expected_ids):
+        for actual_rate, expected_id in zip(actual_rates, expected_ids, strict=False):
             assert_rate_for_id(expected_rate_id=expected_id, actual_rate=actual_rate)
         assert len(actual_rates) == len(expected_ids)
 

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from envoy_schema.server.schema.sep2.metering import ReadingType
 from envoy_schema.server.schema.sep2.pricing import (
@@ -42,7 +41,7 @@ class TariffProfileManager:
     @staticmethod
     async def fetch_tariff_profile(
         session: AsyncSession, scope: SiteRequestScope, tariff_id: int
-    ) -> Optional[TariffProfileResponse]:
+    ) -> TariffProfileResponse | None:
         """Fetches a single tariff in the form of a sep2 TariffProfile thats specific to a single site."""
 
         tariff = await select_single_tariff(session, tariff_id)
@@ -67,8 +66,8 @@ class TariffProfileManager:
         start: int,
         changed_after: datetime,
         limit: int,
-        fsa_id: Optional[int],
-    ) -> Optional[TariffProfileListResponse]:
+        fsa_id: int | None,
+    ) -> TariffProfileListResponse | None:
         """Fetches all tariffs accessible to a specific site (and optionally scoped to a specific function set
         assignment id)."""
 
@@ -93,7 +92,7 @@ class TariffProfileManager:
 
         return TariffProfileMapper.map_to_list_response(
             scope,
-            zip(tariffs, tariff_component_counts, tariff_rate_counts),
+            zip(tariffs, tariff_component_counts, tariff_rate_counts, strict=False),
             tariff_count,
             fsa_id,
             config.tp_pollrate_seconds,
@@ -101,7 +100,6 @@ class TariffProfileManager:
 
 
 class RateComponentManager:
-
     @staticmethod
     async def fetch_reading_type(
         session: AsyncSession, scope: SiteRequestScope, tariff_id: int, rate_component_id: int
@@ -124,7 +122,7 @@ class RateComponentManager:
         scope: SiteRequestScope,
         tariff_id: int,
         rate_component_id: int,
-    ) -> Optional[RateComponentResponse]:
+    ) -> RateComponentResponse | None:
         """Fetches a RateComponent underneath a specific tariff_id - returns None if it DNE"""
 
         site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
@@ -147,7 +145,7 @@ class RateComponentManager:
         scope: SiteRequestScope,
         tariff_id: int,
         start: int,
-        changed_after: Optional[datetime],
+        changed_after: datetime | None,
         limit: int,
     ) -> RateComponentListResponse:
         """Fetches all RateComponent's underneath a specific Tariff via a list endpoint"""
@@ -165,11 +163,12 @@ class RateComponentManager:
                 )
             )
 
-        return RateComponentMapper.map_to_list_response(scope, tariff_id, list(zip(tcs, tcs_rate_counts)), tc_count)
+        return RateComponentMapper.map_to_list_response(
+            scope, tariff_id, list(zip(tcs, tcs_rate_counts, strict=False)), tc_count
+        )
 
 
 class TimeTariffIntervalManager:
-
     @staticmethod
     async def fetch_time_tariff_interval_list(
         session: AsyncSession,
@@ -244,7 +243,7 @@ class TimeTariffIntervalManager:
         tariff_id: int,
         rate_component_id: int,
         time_tariff_interval_id: int,
-    ) -> Optional[TimeTariffIntervalResponse]:
+    ) -> TimeTariffIntervalResponse | None:
         """Fetches a single TimeTariffInterval entity for the specified id
 
         Returns None if no rate exists for that id/site"""

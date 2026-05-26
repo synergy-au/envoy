@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from envoy_schema.server.schema.sep2.types import (
     AccumulationBehaviourType,
@@ -20,13 +19,13 @@ from envoy.server.model.archive.base import ARCHIVE_TABLE_PREFIX, ArchiveBase
 
 
 class ArchiveTariff(ArchiveBase):
-    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.Tariff.__tablename__  # type: ignore
+    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.Tariff.__tablename__
     tariff_id: Mapped[int] = mapped_column(INTEGER, index=True)
-    version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    version: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     name: Mapped[str] = mapped_column(String(64))
     dnsp_code: Mapped[str] = mapped_column(String(20))
     currency_code: Mapped[CurrencyCode] = mapped_column(Integer)
-    price_power_of_ten_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    price_power_of_ten_multiplier: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     primacy: Mapped[int] = mapped_column(INTEGER)
 
     fsa_id: Mapped[int] = mapped_column(Integer)
@@ -38,43 +37,43 @@ class ArchiveTariffComponent(ArchiveBase):
     """Represents a single pricing "unit of measure". All TariffGeneratedRate instances underneath it will dictate
     individual prices but this entity will describe what is actually being priced"""
 
-    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.TariffComponent.__tablename__  # type: ignore
+    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.TariffComponent.__tablename__
     tariff_component_id: Mapped[int] = mapped_column(BigInteger, index=True)
     tariff_id: Mapped[int] = mapped_column(INTEGER)
 
-    description: Mapped[Optional[str]] = mapped_column(VARCHAR(length=32), nullable=True)
-    version: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    description: Mapped[str | None] = mapped_column(VARCHAR(length=32), nullable=True)
+    version: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     role_flags: Mapped[RoleFlagsType] = mapped_column(INTEGER)
 
     # ReadingType fields
-    accumulation_behaviour: Mapped[Optional[AccumulationBehaviourType]] = mapped_column(INTEGER, nullable=True)
-    commodity: Mapped[Optional[CommodityType]] = mapped_column(INTEGER, nullable=True)
-    data_qualifier: Mapped[Optional[DataQualifierType]] = mapped_column(INTEGER, nullable=True)
-    flow_direction: Mapped[Optional[FlowDirectionType]] = mapped_column(INTEGER, nullable=True)
-    kind: Mapped[Optional[KindType]] = mapped_column(INTEGER, nullable=True)
-    phase: Mapped[Optional[PhaseCode]] = mapped_column(INTEGER, nullable=True)
-    power_of_ten_multiplier: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    uom: Mapped[Optional[UomType]] = mapped_column(INTEGER, nullable=True)
+    accumulation_behaviour: Mapped[AccumulationBehaviourType | None] = mapped_column(INTEGER, nullable=True)
+    commodity: Mapped[CommodityType | None] = mapped_column(INTEGER, nullable=True)
+    data_qualifier: Mapped[DataQualifierType | None] = mapped_column(INTEGER, nullable=True)
+    flow_direction: Mapped[FlowDirectionType | None] = mapped_column(INTEGER, nullable=True)
+    kind: Mapped[KindType | None] = mapped_column(INTEGER, nullable=True)
+    phase: Mapped[PhaseCode | None] = mapped_column(INTEGER, nullable=True)
+    power_of_ten_multiplier: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+    uom: Mapped[UomType | None] = mapped_column(INTEGER, nullable=True)
 
     created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the reading set was created
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # When the rec was last altered
 
 
 class ArchiveTariffGeneratedRate(ArchiveBase):
-    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.TariffGeneratedRate.__tablename__  # type: ignore
+    __tablename__ = ARCHIVE_TABLE_PREFIX + original_models.TariffGeneratedRate.__tablename__
     tariff_generated_rate_id: Mapped[int] = mapped_column(BigInteger, index=True)
     tariff_id: Mapped[int] = mapped_column(INTEGER)
     tariff_component_id: Mapped[int] = mapped_column(BigInteger)
     site_id: Mapped[int] = mapped_column(INTEGER)
-    calculation_log_id: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    calculation_log_id: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     duration_seconds: Mapped[int] = mapped_column(INTEGER)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     price_pow10_encoded: Mapped[int] = mapped_column(INTEGER)
-    block_1_start_pow10_encoded: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
-    price_pow10_encoded_block_1: Mapped[Optional[int]] = mapped_column(INTEGER, nullable=True)
+    block_1_start_pow10_encoded: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+    price_pow10_encoded_block_1: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 
     created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -1,6 +1,5 @@
 import urllib.parse
 from http import HTTPStatus
-from typing import Optional
 
 import pytest
 from assertical.fixtures.postgres import generate_async_session
@@ -57,7 +56,7 @@ async def test_get_connectionpoint(
     client: AsyncClient,
     connection_point_uri_format: str,
     site_id: int,
-    expected_nmi: Optional[str],
+    expected_nmi: str | None,
     cert: str,
     expected_status_response: HTTPStatus,
 ):
@@ -116,7 +115,7 @@ async def test_connectionpoint_update(
     cert: str,
     update_nmi_value: str,
     expected_result: HTTPStatus,
-    expected_nmi: Optional[str],
+    expected_nmi: str | None,
 ):
     """Tests that connection points can be updated / fetched (and that they archive appropriately)"""
 
@@ -213,8 +212,7 @@ async def test_connectionpoint_update_bad_xml(client: AsyncClient, connection_po
 
     # The closing tag on ID has an incorrect namespace
     bad_xml = (
-        '<ConnectionPoint xmlns="http://csipaus.org/ns/v1.3-beta/storage">'
-        "<id>1111111111</csipaus:id></ConnectionPoint>"
+        '<ConnectionPoint xmlns="http://csipaus.org/ns/v1.3-beta/storage"><id>1111111111</csipaus:id></ConnectionPoint>'
     )
 
     href = connection_point_uri_format.format(site_id=1)

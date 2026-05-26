@@ -1,5 +1,5 @@
+from collections.abc import Iterator, Sequence
 from datetime import datetime
-from typing import Iterator, Optional, Sequence, Union
 
 from envoy_schema.server.schema import uri
 from envoy_schema.server.schema.sep2.event import EventStatus, EventStatusType
@@ -38,7 +38,7 @@ from envoy.server.request_scope import AggregatorRequestScope, DeviceOrAggregato
 class TariffProfileMapper:
     @staticmethod
     def map_to_response(
-        scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope],
+        scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope,
         tariff: Tariff,
         total_components: int,
         total_active_rates: int,
@@ -73,7 +73,7 @@ class TariffProfileMapper:
         scope: DeviceOrAggregatorRequestScope,
         tariffs: Iterator[tuple[Tariff, int, int]],
         total_tariffs: int,
-        fsa_id: Optional[int],
+        fsa_id: int | None,
         tp_poll_rate: int,
     ) -> TariffProfileListResponse:
         """Returns a list containing multiple sep2 entities. The href's will be to the site specific
@@ -137,7 +137,7 @@ class RateComponentMapper:
 
     @staticmethod
     def map_to_response(
-        scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope], tc: TariffComponent, total_rates: int
+        scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope, tc: TariffComponent, total_rates: int
     ) -> RateComponentResponse:
         """Maps/Creates a single rate component response describing a commodity being priced"""
 
@@ -216,7 +216,7 @@ class ConsumptionTariffIntervalMapper:
         """Extracts the (start, price) for the specified cti_id (block_id). The first block is cti_id=1. Raises a
         NotFoundError if the rate does NOT have a price/start value at that block."""
 
-        match (cti_id):
+        match cti_id:
             case 1:
                 return (0, rate.price_pow10_encoded)
             case 2:
@@ -228,7 +228,7 @@ class ConsumptionTariffIntervalMapper:
 
     @staticmethod
     def map_to_response(
-        scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope],
+        scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope,
         rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
         cti_id: int,
     ) -> ConsumptionTariffIntervalResponse:
@@ -282,7 +282,7 @@ class ConsumptionTariffIntervalMapper:
 
     @staticmethod
     def map_to_summary_list_response(
-        scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope],
+        scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope,
         rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
     ) -> ConsumptionTariffIntervalListSummaryResponse:
         """Returns a list containing the ConsumptionTariffIntervalResponse(s) representing rate"""
@@ -301,10 +301,9 @@ class ConsumptionTariffIntervalMapper:
 
 
 class TimeTariffIntervalMapper:
-
     @staticmethod
     def map_to_response(
-        scope: Union[DeviceOrAggregatorRequestScope, AggregatorRequestScope],
+        scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope,
         now: datetime,
         rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
     ) -> TimeTariffIntervalResponse:
@@ -380,9 +379,9 @@ class TimeTariffIntervalMapper:
     def map_to_list_response(
         scope: DeviceOrAggregatorRequestScope,
         tariff_id: int,
-        tariff_component_id: Optional[int],
+        tariff_component_id: int | None,
         now: datetime,
-        rates: Sequence[Union[TariffGeneratedRate, ArchiveTariffGeneratedRate]],
+        rates: Sequence[TariffGeneratedRate | ArchiveTariffGeneratedRate],
         total: int,
         tti_poll_rate: int,
     ) -> TimeTariffIntervalListResponse:
