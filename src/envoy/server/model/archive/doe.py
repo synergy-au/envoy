@@ -105,8 +105,6 @@ class ArchiveDynamicOperatingEnvelope(ArchiveBase):
         DECIMAL(16, original_models.doe.DOE_DECIMAL_PLACES), nullable=True
     )
 
-    display_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-
     __table_args__ = (
         Index(
             "archive_doe_site_control_group_id_end_time_deleted_time_site_id",
