@@ -9,8 +9,6 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose down -v
 
 docker volume rm demo_postgres_data || true
 
-HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d --build
-
 echo ""
 echo "Demo has been reset, run the following to start:"
 echo 'HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up --build'
