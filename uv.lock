@@ -497,7 +497,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'" },
     { name = "cryptography" },
     { name = "defusedxml", marker = "extra == 'test'" },
-    { name = "envoy-schema", git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.2.0-storage.0.9.0" },
+    { name = "envoy-schema", git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.2.0-storage.0.10.0" },
     { name = "fastapi", specifier = ">=0.94.1,<0.137" },
     { name = "fastapi-async-sqlalchemy" },
     { name = "freezegun", marker = "extra == 'test'" },
@@ -534,7 +534,7 @@ provides-extras = ["dev", "test"]
 [[package]]
 name = "envoy-schema"
 version = "2.2.0"
-source = { git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.2.0-storage.0.9.0#ea22c29ea1f97f9e3d7463a4e1ec54d16aaa0c4f" }
+source = { git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.2.0-storage.0.10.0#4c475569b60ad9eb4a22b2fc9289ec7e36c14da1" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-xml", extra = ["lxml"] },
