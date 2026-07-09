@@ -7,6 +7,7 @@ from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
+    TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
     TariffRequest,
@@ -18,16 +19,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
+    count_tariff_generated_rates_for_period,
     insert_many_tariff_genrate,
     insert_single_tariff,
     select_single_tariff_generated_rate,
+    select_tariff_components_for_tariff,
+    select_tariff_generated_rates_for_period,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
     update_single_tariff_component,
 )
-from envoy.admin.mapper.pricing import TariffComponentMapper, TariffGeneratedRateListMapper, TariffMapper
+from envoy.admin.mapper.pricing import (
+    TariffComponentMapper,
+    TariffGeneratedRateListMapper,
+    TariffMapper,
+)
 from envoy.notification.manager.notification import NotificationManager
-from envoy.server.crud.pricing import select_all_tariffs, select_single_tariff, select_tariff_component_by_id
+from envoy.server.crud.pricing import (
+    select_all_tariffs,
+    select_single_tariff,
+    select_tariff_component_by_id,
+)
 from envoy.server.manager.time import utc_now
 from envoy.server.model.subscription import SubscriptionResource
 
@@ -40,9 +52,9 @@ class TariffManager:
         changed_time = utc_now()
         tariff_model = TariffMapper.map_from_request(changed_time, tariff)
         await insert_single_tariff(session, tariff_model)
-        await session.commit()
 
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF, changed_time)
+        await NotificationManager.notify_changed_deleted_entities(session, SubscriptionResource.TARIFF, changed_time)
+        await session.commit()
 
         return tariff_model.tariff_id
 
@@ -58,9 +70,9 @@ class TariffManager:
         tariff_model = TariffMapper.map_from_request(changed_time, tariff)
         tariff_model.tariff_id = tariff_id
         await update_single_tariff(session, tariff_model, changed_time)
-        await session.commit()
 
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF, changed_time)
+        await NotificationManager.notify_changed_deleted_entities(session, SubscriptionResource.TARIFF, changed_time)
+        await session.commit()
 
     @staticmethod
     async def fetch_tariff(session: AsyncSession, tariff_id: int) -> TariffResponse:
@@ -87,9 +99,11 @@ class TariffComponentManager:
         changed_time = utc_now()
         tc_model = TariffComponentMapper.map_from_request(changed_time, tariff_component)
         session.add(tc_model)
-        await session.commit()
 
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF_COMPONENT, changed_time)
+        await NotificationManager.notify_changed_deleted_entities(
+            session, SubscriptionResource.TARIFF_COMPONENT, changed_time
+        )
+        await session.commit()
 
         return tc_model.tariff_component_id
 
@@ -103,7 +117,9 @@ class TariffComponentManager:
 
     @staticmethod
     async def update_tariff_component(
-        session: AsyncSession, tariff_component_id: int, tariff_component: TariffComponentRequest
+        session: AsyncSession,
+        tariff_component_id: int,
+        tariff_component: TariffComponentRequest,
     ) -> None:
         """Select a singular tariff component entry from the DB and map to a TariffResponse object."""
 
@@ -111,9 +127,11 @@ class TariffComponentManager:
         tc_model = TariffComponentMapper.map_from_request(changed_time, tariff_component)
         tc_model.tariff_component_id = tariff_component_id
         await update_single_tariff_component(session, tc_model, changed_time)
-        await session.commit()
 
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF_COMPONENT, changed_time)
+        await NotificationManager.notify_changed_deleted_entities(
+            session, SubscriptionResource.TARIFF_COMPONENT, changed_time
+        )
+        await session.commit()
 
     @staticmethod
     async def delete_tariff_component(session: AsyncSession, tariff_component_id: int) -> None:
@@ -121,12 +139,25 @@ class TariffComponentManager:
 
         changed_time = utc_now()
         await cancel_and_delete_tariff_component(session, tariff_component_id, changed_time)
-        await session.commit()
 
         # We are deliberately NOT issuing a cancel notification for any child rates - that could potentially be massive
         # The advice we (currently) have is to delete any active rates manually (which will raise notifications) before
         # calling this.
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF_COMPONENT, changed_time)
+        await NotificationManager.notify_changed_deleted_entities(
+            session, SubscriptionResource.TARIFF_COMPONENT, changed_time
+        )
+
+        await session.commit()
+
+    @staticmethod
+    async def fetch_components_for_tariff(session: AsyncSession, tariff_id: int) -> list[TariffComponentResponse]:
+        """Return all TariffComponents belonging to the given tariff, ordered by id.
+        Raises NoResultFound if the tariff does not exist."""
+        tariff = await select_single_tariff(session, tariff_id)
+        if tariff is None:
+            raise NoResultFound
+        components = await select_tariff_components_for_tariff(session, tariff_id)
+        return [TariffComponentMapper.map_to_response(tc) for tc in components]
 
 
 class TariffGeneratedRateManager:
@@ -146,8 +177,10 @@ class TariffGeneratedRateManager:
         do nothing"""
         now = utc_now()
         await cancel_tariff_generated_rate(session, tariff_generated_rate_id, now)
+        await NotificationManager.notify_changed_deleted_entities(
+            session, SubscriptionResource.TARIFF_GENERATED_RATE, now
+        )
         await session.commit()
-        await NotificationManager.notify_changed_deleted_entities(SubscriptionResource.TARIFF_GENERATED_RATE, now)
 
     @staticmethod
     async def add_many_tariff_genrate(
@@ -169,10 +202,42 @@ class TariffGeneratedRateManager:
             changed_time, tariff_genrates, tariff_ids_by_component
         )
         insert_ids = await insert_many_tariff_genrate(session, tariff_genrate_models)
-        await session.commit()
 
         await NotificationManager.notify_changed_deleted_entities(
-            SubscriptionResource.TARIFF_GENERATED_RATE, changed_time
+            session, SubscriptionResource.TARIFF_GENERATED_RATE, changed_time
         )
+        await session.commit()
 
         return BatchCreateResponse(ids=cast(list[int], insert_ids))
+
+    @staticmethod
+    async def fetch_rates_for_period(
+        session: AsyncSession,
+        tariff_component_id: int,
+        start: int,
+        limit: int,
+        period_start: datetime,
+        period_end: datetime,
+        site_id: int | None = None,
+    ) -> TariffGeneratedRatePageResponse:
+        """Fetch paginated tariff generated rates for a time period scoped to a TariffComponent.
+        Raises NoResultFound if the TariffComponent does not exist."""
+        tc = await select_tariff_component_by_id(session, tariff_component_id)
+        if tc is None:
+            raise NoResultFound
+        total_count = await count_tariff_generated_rates_for_period(
+            session, tariff_component_id, period_start, period_end, site_id
+        )
+        rates = await select_tariff_generated_rates_for_period(
+            session, tariff_component_id, start, limit, period_start, period_end, site_id
+        )
+        return TariffGeneratedRateListMapper.map_to_page_response(
+            total_count=total_count,
+            rates=rates,
+            tariff_component_id=tariff_component_id,
+            start=start,
+            limit=limit,
+            period_start=period_start,
+            period_end=period_end,
+            site_id=site_id,
+        )
