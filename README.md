@@ -79,8 +79,7 @@ Typically settings are set by setting an environment variable with the same name
 | ----------- | -------- | ----------- |
 | `database_url` | `string` | The core `PostgresDsn` for connecting to the envoy database. eg `postgresql+asyncpg://envoyuser:mypass@localhost:5432/envoydb` |
 | `default_timezone` | `string` | The timezone name that will be used as the default for new sites registered in band (defaults to "Australia/Brisbane") |
-| `enable_notifications` | `bool` | Whether notifications for active subscriptions will be generated. Notifications will either be handled in a local threadpool (if `rabbit_mq_broker_url` is None or via a dedicated task_iq worker connected to the same `rabbit_mq_broker_url` instance) |
-| `rabbit_mq_broker_url` | `string` | URL to a rabbit MQ instance that will handle notifications. Eg `amqp://user:password@localhost:5672`. Will require a worker servicing this instance |
+| `enable_notifications` | `bool` | Whether notifications for active subscriptions will be generated. When enabled, outgoing notifications are enqueued (as `notification_check` rows) in the envoy database and delivered by the notification worker (see below) |
 | `azure_ad_tenant_id` | `string` | The Azure AD tenant id that envoy is deployed under (see Azure Active Directory Support below) |
 | `azure_ad_client_id` | `string` | The Azure AD client id that identifies the VM envoy is deployed under (see Azure Active Directory Support below) |
 | `azure_ad_valid_issuer` | `string` | The Azure AD issuer that will be generating tokens for the current tenant (see Azure Active Directory Support below) |
@@ -90,6 +89,10 @@ Typically settings are set by setting an environment variable with the same name
 | `iana_pen` | `int` | Defaults to 0. The Internet Assigned Numbers Authority - Private Enterprise Number of the organisation hosting this instance. This value will be used in all encoded MRIDs as per sep2 specifications. |
 | `sqlalchemy_engine_arguments` | `str` | A JSON encoded dictionary of additional parameters to pass to the SQL Alchemy `create_engine` function. Please see the [SQL Alchemy](https://docs.sqlalchemy.org/en/20/core/engines.html#sqlalchemy.create_engine) docs for specifics.  Example: `{"pool_size":10, "max_overflow":15}`. Please note that `pool_recycle` will be overridden if `azure_ad_db_refresh_secs` is set |
 | `notification_disable_tls_verify` | `bool` | If `true`, disables TLS certificate verification for outbound notification requests to subscription recipients. Defaults to `false`. |
+| `notifications_with_mtls` | `bool` | If `true`, present a client certificate (mTLS) on outbound notification requests. Requires `notification_mtls_cert` and `notification_mtls_key` to be set. Defaults to `false`. |
+| `notification_mtls_cert` | `string` | Path to the client certificate PEM file presented on outbound notifications when `notifications_with_mtls` is enabled. |
+| `notification_mtls_key` | `string` | Path to the client private key PEM file for `notification_mtls_cert` when `notifications_with_mtls` is enabled. |
+| `notification_mtls_serca` | `string` | Optional path to a SERCA PEM file used to verify the subscription recipient's server certificate. If unset, the system CA store is used. |
 
 **Additional Utility Server Settings (server)**
 
@@ -195,12 +198,12 @@ cd -
 
 The Postman collection in postman/envoy.postman_collection.json uses certificate 1 (`tests/data/certificates/certificate1.py`) to make its requests and will require the database to be populated with this base config.
 
-6. (Optional) Start notification server worker
+6. Notifications
 
-The notification server will require workers to handle executing the async tasks. This is handled by taskiq and a worker
-can be initialised with:
-
-`uv run taskiq worker envoy.notification.main:broker envoy.notification.task`
+When `ENABLE_NOTIFICATIONS` is set, sep2 pub/sub notifications are enqueued (within the originating request's
+transaction - a transactional outbox) as `notification_check` rows in the envoy database, and delivered by a
+notification worker that runs in-process within the server: a polling loop that drains the `notification_check` and
+`notification_transmit` queue tables. No separate process or broker is required.
 
 7. Start server
 

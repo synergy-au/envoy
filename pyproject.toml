@@ -41,7 +41,6 @@ max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "**/api/**" = ["B008"] # FastAPI makes extensive use of functions for default parameters (eg param: int = Query([0]) )
-"src/envoy/notification/task/**" = ["B008"] # TaskIQ use of functions for default parameters (eg TaskiqDepends() )
 "**/alembic/versions/**" = ["E501"] # We overlook certain alembic migration issues
 "tests/**" = ["S", "ANN", "N"]
 
@@ -57,8 +56,8 @@ name = "envoy"
 dynamic = ["version", "readme"]
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v2.1.0-storage.0.8.0",
-    "fastapi>=0.94.1",
+    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v2.2.0-storage.0.10.0",
+    "fastapi>=0.94.1,<0.137", # Recent FastAPI versions appear to break route exclusion functionality
     "sqlalchemy>=2.0.0",
     "alembic",
     "tzlocal",
@@ -74,8 +73,6 @@ dependencies = [
     "pyjwt",
     "cryptography",
     "httpx",
-    "taskiq!=0.11.5,!=0.11.6",      # Known compatibiity issue with pydantic
-    "taskiq-aio-pika!=0.6.0",
     "parse",
     "intervaltree",
 ]

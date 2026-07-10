@@ -1,3 +1,4 @@
+import asyncio
 import unittest.mock as mock
 from collections import defaultdict
 from collections.abc import AsyncGenerator
@@ -8,15 +9,17 @@ from assertical.fake.http import MockedAsyncClient
 from assertical.fixtures.fastapi import start_app_with_client
 from httpx import Response
 from psycopg import Connection
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from envoy.admin.main import generate_app as admin_gen_app
 from envoy.admin.settings import generate_settings as admin_gen_settings
+from envoy.notification.main import run_poll_loop
+from envoy.notification.settings import generate_settings as generate_notification_settings
 from envoy.server.main import generate_app
 from envoy.server.settings import generate_settings
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_FINGERPRINT as VALID_CERT_FINGERPRINT
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_PEM as VALID_CERT_PEM
 from tests.integration.integration_server import cert_header
-from tests.integration.notification import TestableBroker
 from tests.unit.jwt import generate_rs256_jwt
 
 READONLY_USER_NAME = "mycustomrouser"
@@ -80,6 +83,9 @@ async def admin_client_auth(pg_base_config: Connection):
     # when trying to run multiple tests sequentially
     app = admin_gen_app(settings)
     async with start_app_with_client(app, client_auth=basic_auth) as c:
+        # httpx >=0.28 no longer auto-sets Content-Type for `content=` strings/bytes,
+        # so admin tests that POST `model_dump_json()` get a 422. Default to JSON here.
+        c.headers["content-type"] = "application/json"
         yield c
 
 
@@ -94,6 +100,7 @@ async def admin_client_readonly_auth(pg_base_config: Connection):
     # when trying to run multiple tests sequentially
     app = admin_gen_app(settings)
     async with start_app_with_client(app, client_auth=basic_auth) as c:
+        c.headers["content-type"] = "application/json"
         yield c
 
 
@@ -106,6 +113,7 @@ async def admin_client_unauth(pg_base_config: Connection):
     # when trying to run multiple tests sequentially
     app = admin_gen_app(admin_gen_settings())
     async with start_app_with_client(app) as c:
+        c.headers["content-type"] = "application/json"
         yield c
 
 
@@ -119,30 +127,31 @@ def admin_path_methods() -> defaultdict[str, list[str]]:
 
 
 @pytest.fixture(scope="function")
-async def notifications_enabled(
-    pg_empty_config, request: pytest.FixtureRequest
-) -> AsyncGenerator[MockedAsyncClient, None]:
-    """Enables notifications for the server and returns a MockedAsyncClient which
-    will be patched to receive all outgoing notification POST requests.
+async def notifications_enabled(pg_empty_config) -> AsyncGenerator[MockedAsyncClient, None]:
+    """Enables notifications for the app under test and returns a MockedAsyncClient which will be patched to receive
+    all outgoing notification POST requests.
+
+    Requesting this fixture sets ENABLE_NOTIFICATIONS (see pg_empty_config) so the app under test enqueues
+    notification checks (transactional outbox). The notification worker only runs in-process in the server app (not
+    the admin app), so this fixture also runs the worker poll loop against the same test database - ensuring the queue
+    is drained and notifications are POSTed through the patched MockedAsyncClient regardless of which app is under
+    test. Tests should wait for delivery via wait_for_n_requests.
 
     The returned client will default to always returning HTTP NO_CONTENT on get/post"""
 
-    # We need to inject our own extension to the TaskIQ in memory broker that's configured
-    # with the appropriate state
-    href_prefix_marker = request.node.get_closest_marker("href_prefix")
-    if href_prefix_marker is not None:
-        href_prefix = str(href_prefix_marker.args[0])
-    else:
-        href_prefix = None
-    broker = TestableBroker(pg_empty_config, href_prefix)
+    settings = generate_notification_settings()
+    db_kwargs = settings.db_middleware_kwargs
+    engine = create_async_engine(db_kwargs["db_url"], **db_kwargs.get("engine_args", {}))
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
     mock_async_client = MockedAsyncClient(Response(status_code=HTTPStatus.NO_CONTENT))
+    stop_event = asyncio.Event()
     with mock.patch("envoy.notification.task.transmit.AsyncClient") as mock_AsyncClient:
         mock_AsyncClient.return_value = mock_async_client
-        with mock.patch("envoy.notification.manager.notification.get_enabled_broker") as mock_get_enabled_broker:
-            await broker.startup()
-            mock_get_enabled_broker.return_value = broker
-
+        worker_task = asyncio.create_task(run_poll_loop(session_maker, True, settings, stop_event))
+        try:
             yield mock_async_client
-
-            await broker.shutdown()
+        finally:
+            stop_event.set()
+            await worker_task
+            await engine.dispose()

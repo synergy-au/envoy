@@ -52,17 +52,19 @@ def test_map_to_der_status_response():
 
 @pytest.mark.parametrize(
     "setting, rating",
-    product(
-        [
-            None,
-            generate_class_instance(SiteDERSetting, seed=101, optional_is_none=True),
-            generate_class_instance(SiteDERSetting, seed=202, optional_is_none=False),
-        ],
-        [
-            None,
-            generate_class_instance(SiteDERRating, seed=303, optional_is_none=True),
-            generate_class_instance(SiteDERRating, seed=404, optional_is_none=False),
-        ],
+    list(
+        product(
+            [
+                None,
+                generate_class_instance(SiteDERSetting, seed=101, optional_is_none=True),
+                generate_class_instance(SiteDERSetting, seed=202, optional_is_none=False),
+            ],
+            [
+                None,
+                generate_class_instance(SiteDERRating, seed=303, optional_is_none=True),
+                generate_class_instance(SiteDERRating, seed=404, optional_is_none=False),
+            ],
+        )
     ),
 )
 def test_map_to_der_config_response_no_bad_combinations(setting: SiteDERSetting | None, rating: SiteDERRating | None):
@@ -143,7 +145,7 @@ def test_site_single_entity_mapper():
         Site, seed=303, optional_is_none=False, generate_relationships=True
     )
     assert len(with_groups_and_der.assignments) > 0, "Expecting at least 1 group"
-    assert len(with_groups_and_der.site_ders) > 0, "Expecting at least 1 der"
+    assert with_groups_and_der.site_der_rating is not None, "Expecting der data"
 
     all_set_mapped = SiteMapper.map_to_site_response(all_set)
     with_none_mapped = SiteMapper.map_to_site_response(with_none)

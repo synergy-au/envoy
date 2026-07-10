@@ -1,11 +1,11 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from envoy.server.model.site import Site, SiteDER, SiteGroup, SiteGroupAssignment
+from envoy.server.model.site import Site, SiteGroup, SiteGroupAssignment
 
 
 async def count_all_sites(session: AsyncSession, group_filter: str | None, changed_after: datetime | None) -> int:
@@ -48,10 +48,10 @@ async def select_all_sites(
 
     if include_der:
         stmt = stmt.options(
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_availability),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_rating),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_setting),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_status),
+            selectinload(Site.site_der_availability),
+            selectinload(Site.site_der_rating),
+            selectinload(Site.site_der_setting),
+            selectinload(Site.site_der_status),
         )
 
     if group_filter:
@@ -129,11 +129,21 @@ async def select_single_site_no_scoping(
 
     if include_der:
         stmt = stmt.options(
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_availability),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_rating),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_setting),
-            selectinload(Site.site_ders).selectinload(SiteDER.site_der_status),
+            selectinload(Site.site_der_availability),
+            selectinload(Site.site_der_rating),
+            selectinload(Site.site_der_setting),
+            selectinload(Site.site_der_status),
         )
 
     resp = await session.execute(stmt)
     return resp.scalar_one_or_none()
+
+
+async def set_site_group_assignments(
+    session: AsyncSession, site_id: int, group_ids: list[int], changed_time: datetime
+) -> None:
+    """Replaces all group assignments for a site with the provided group_ids.
+    An empty list clears all assignments."""
+    await session.execute(delete(SiteGroupAssignment).where(SiteGroupAssignment.site_id == site_id))
+    for group_id in group_ids:
+        session.add(SiteGroupAssignment(site_id=site_id, site_group_id=group_id, changed_time=changed_time))
