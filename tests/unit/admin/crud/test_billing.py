@@ -22,8 +22,10 @@ from envoy.server.model.tariff import TariffGeneratedRate
 
 def assert_billing_data_types(bd: BillingData):
     assert isinstance(bd, BillingData)
-    assert_list_type(DynamicOperatingEnvelope, bd.active_does)
-    assert_list_type(TariffGeneratedRate, bd.active_tariffs)
+    assert all(isinstance(site_id, int) for site_id, _ in bd.active_does)
+    assert_list_type(DynamicOperatingEnvelope, [doe for _, doe in bd.active_does])
+    assert all(isinstance(site_id, int) for site_id, _ in bd.active_tariffs)
+    assert_list_type(TariffGeneratedRate, [rate for _, rate in bd.active_tariffs])
     assert_list_type(SiteReading, bd.varh_readings)
     assert_list_type(SiteReading, bd.wh_readings)
 
@@ -157,9 +159,9 @@ async def test_fetch_aggregator_billing_data(
         )
         assert_billing_data_types(billing_data)
 
-        assert [b.import_active_price for b in billing_data.active_tariffs] == expected_tariff_imports
+        assert [b.import_active_price for _, b in billing_data.active_tariffs] == expected_tariff_imports
 
-        assert [b.import_limit_active_watts for b in billing_data.active_does] == expected_doe_imports
+        assert [doe.import_limit_active_watts for _, doe in billing_data.active_does] == expected_doe_imports
 
         assert [
             (b.site_reading_type.site_id, b.site_reading_type.uom, b.value) for b in billing_data.wh_readings
@@ -300,9 +302,9 @@ async def test_fetch_calculation_log_billing_data(
 
         assert_billing_data_types(billing_data)
 
-        assert [b.import_active_price for b in billing_data.active_tariffs] == expected_tariff_imports
+        assert [b.import_active_price for _, b in billing_data.active_tariffs] == expected_tariff_imports
 
-        assert [b.import_limit_active_watts for b in billing_data.active_does] == expected_doe_imports
+        assert [doe.import_limit_active_watts for _, doe in billing_data.active_does] == expected_doe_imports
 
         assert [
             (b.site_reading_type.site_id, b.site_reading_type.uom, b.value) for b in billing_data.wh_readings
@@ -470,9 +472,9 @@ async def test_fetch_sites_billing_data(
         )
         assert_billing_data_types(billing_data)
 
-        assert [b.import_active_price for b in billing_data.active_tariffs] == expected_tariff_imports
+        assert [b.import_active_price for _, b in billing_data.active_tariffs] == expected_tariff_imports
 
-        assert [b.import_limit_active_watts for b in billing_data.active_does] == expected_doe_imports
+        assert [doe.import_limit_active_watts for _, doe in billing_data.active_does] == expected_doe_imports
 
         assert [
             (b.site_reading_type.site_id, b.site_reading_type.uom, b.value) for b in billing_data.wh_readings

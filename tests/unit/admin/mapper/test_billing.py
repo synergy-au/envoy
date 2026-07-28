@@ -305,15 +305,17 @@ def test_map_doe(optional_is_none: bool):
     original: DynamicOperatingEnvelope = generate_class_instance(
         DynamicOperatingEnvelope, seed=101, optional_is_none=optional_is_none
     )
+    site_id = 12345
 
-    mapped = BillingMapper.map_doe(original)
+    mapped = BillingMapper.map_doe(site_id, original)
     assert isinstance(mapped, BillingDoe)
     assert_class_instance_equality(
         BillingDoe,
         original,
         mapped,
-        ignored_properties={"period_start", "import_limit_active_watts", "export_limit_watts"},
+        ignored_properties={"site_id", "period_start", "import_limit_active_watts", "export_limit_watts"},
     )
+    assert mapped.site_id == site_id
     assert mapped.period_start == original.start_time
     if optional_is_none:
         assert mapped.import_limit_active_watts == Decimal(0), "Workaround limitations on legacy API"
@@ -331,10 +333,14 @@ def test_map_rate(optional_is_none: bool):
     original: TariffGeneratedRate = generate_class_instance(
         TariffGeneratedRate, seed=101, optional_is_none=optional_is_none
     )
+    site_id = 12345
 
-    mapped = BillingMapper.map_rate(original)
+    mapped = BillingMapper.map_rate(site_id, original)
     assert isinstance(mapped, BillingTariffRate)
-    assert_class_instance_equality(BillingTariffRate, original, mapped, ignored_properties=set(["period_start"]))
+    assert_class_instance_equality(
+        BillingTariffRate, original, mapped, ignored_properties=set(["site_id", "period_start"])
+    )
+    assert mapped.site_id == site_id
     assert mapped.period_start == original.start_time
 
 
@@ -358,8 +364,12 @@ def test_map_to_aggregator_response(optional_is_none: bool):
                 SiteReading, seed=303, optional_is_none=optional_is_none, generate_relationships=True
             )
         ],
-        active_does=[generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none)],
-        active_tariffs=[generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none)],
+        active_does=[
+            (789, generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none))
+        ],
+        active_tariffs=[
+            (789, generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none))
+        ],
         watt_readings=[
             generate_class_instance(
                 SiteReading, seed=606, optional_is_none=optional_is_none, generate_relationships=True
@@ -408,8 +418,12 @@ def test_map_to_sites_response(optional_is_none: bool):
                 SiteReading, seed=303, optional_is_none=optional_is_none, generate_relationships=True
             )
         ],
-        active_does=[generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none)],
-        active_tariffs=[generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none)],
+        active_does=[
+            (789, generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none))
+        ],
+        active_tariffs=[
+            (789, generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none))
+        ],
         watt_readings=[
             generate_class_instance(
                 SiteReading, seed=606, optional_is_none=optional_is_none, generate_relationships=True
@@ -454,8 +468,12 @@ def test_map_to_calculation_log_response(optional_is_none: bool):
                 SiteReading, seed=303, optional_is_none=optional_is_none, generate_relationships=True
             )
         ],
-        active_does=[generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none)],
-        active_tariffs=[generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none)],
+        active_does=[
+            (789, generate_class_instance(DynamicOperatingEnvelope, seed=404, optional_is_none=optional_is_none))
+        ],
+        active_tariffs=[
+            (789, generate_class_instance(TariffGeneratedRate, seed=505, optional_is_none=optional_is_none))
+        ],
         watt_readings=[
             generate_class_instance(
                 SiteReading, seed=606, optional_is_none=optional_is_none, generate_relationships=True

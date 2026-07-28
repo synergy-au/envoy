@@ -90,12 +90,13 @@ def test_ResponseMapper_map_to_price_response(href_prefix: str | None, optional_
 def test_ResponseMapper_map_from_price_request(optional_is_none: bool, response_type: type[Response]):
     price_response = generate_class_instance(response_type, seed=101, optional_is_none=optional_is_none)
     tariff_generated_rate = generate_class_instance(TariffGeneratedRate, seed=202, optional_is_none=optional_is_none)
+    site_id = 12345
     for prt in PricingReadingType:
-        result = ResponseMapper.map_from_price_request(price_response, tariff_generated_rate, prt)
+        result = ResponseMapper.map_from_price_request(price_response, tariff_generated_rate, site_id, prt)
         assert isinstance(result, TariffGeneratedRateResponse)
         assert result.tariff_generated_rate_response_id is None, "Assigned by the database"
         assert result.created_time is None, "Assigned by the database"
-        assert result.site_id == tariff_generated_rate.site_id
+        assert result.site_id == site_id
         assert result.tariff_generated_rate_id_snapshot == tariff_generated_rate.tariff_generated_rate_id
         assert result.pricing_reading_type == prt
 
@@ -160,12 +161,13 @@ def test_ResponseMapper_map_from_doe_request(
 ):
     response = generate_class_instance(response_type, seed=101, optional_is_none=optional_is_none)
     doe = generate_class_instance(doe_type, seed=202, optional_is_none=optional_is_none)
+    site_id = 12345
 
-    result = ResponseMapper.map_from_doe_request(response, doe)
+    result = ResponseMapper.map_from_doe_request(response, doe, site_id)
     assert isinstance(result, DynamicOperatingEnvelopeResponse)
     assert result.dynamic_operating_envelope_response_id is None, "Assigned by the database"
     assert result.created_time is None, "Assigned by the database"
-    assert result.site_id == doe.site_id
+    assert result.site_id == site_id
     assert result.dynamic_operating_envelope_id_snapshot == doe.dynamic_operating_envelope_id
 
 

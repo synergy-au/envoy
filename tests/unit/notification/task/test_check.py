@@ -17,9 +17,11 @@ from sqlalchemy import func, select, text
 
 from envoy.notification.crud.batch import AggregatorBatchedEntities, get_batch_key
 from envoy.notification.crud.common import (
+    SiteScopedDynamicOperatingEnvelope,
     SiteScopedFunctionSetAssignment,
     SiteScopedSiteControlGroup,
     SiteScopedSiteControlGroupDefault,
+    SiteScopedTariffGeneratedRate,
     TResourceModel,
 )
 from envoy.notification.exception import NotificationError
@@ -281,9 +283,15 @@ def test_get_entity_pages_der(resource: SubscriptionResource, notification_type:
             Subscription(resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, resource_id=1, conditions=[]),
             SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
             [
-                DynamicOperatingEnvelope(dynamic_operating_envelope_id=1, site_id=1, site_control_group_id=1),
-                DynamicOperatingEnvelope(dynamic_operating_envelope_id=2, site_id=2, site_control_group_id=1),
-                DynamicOperatingEnvelope(dynamic_operating_envelope_id=3, site_id=1, site_control_group_id=2),
+                SiteScopedDynamicOperatingEnvelope(
+                    1, 1, DynamicOperatingEnvelope(dynamic_operating_envelope_id=1, site_control_group_id=1)
+                ),
+                SiteScopedDynamicOperatingEnvelope(
+                    1, 2, DynamicOperatingEnvelope(dynamic_operating_envelope_id=2, site_control_group_id=1)
+                ),
+                SiteScopedDynamicOperatingEnvelope(
+                    1, 1, DynamicOperatingEnvelope(dynamic_operating_envelope_id=3, site_control_group_id=2)
+                ),
             ],
             [0, 1],
         ),
@@ -291,10 +299,10 @@ def test_get_entity_pages_der(resource: SubscriptionResource, notification_type:
             Subscription(resource_type=SubscriptionResource.TARIFF_GENERATED_RATE, resource_id=2, conditions=[]),
             SubscriptionResource.TARIFF_GENERATED_RATE,
             [
-                TariffGeneratedRate(tariff_generated_rate_id=1, site_id=2, tariff_id=2),
-                TariffGeneratedRate(tariff_generated_rate_id=2, site_id=2, tariff_id=1),
-                TariffGeneratedRate(tariff_generated_rate_id=3, site_id=1, tariff_id=2),
-                TariffGeneratedRate(tariff_generated_rate_id=4, site_id=1, tariff_id=1),
+                SiteScopedTariffGeneratedRate(1, 2, TariffGeneratedRate(tariff_generated_rate_id=1, tariff_id=2)),
+                SiteScopedTariffGeneratedRate(1, 2, TariffGeneratedRate(tariff_generated_rate_id=2, tariff_id=1)),
+                SiteScopedTariffGeneratedRate(1, 1, TariffGeneratedRate(tariff_generated_rate_id=3, tariff_id=2)),
+                SiteScopedTariffGeneratedRate(1, 1, TariffGeneratedRate(tariff_generated_rate_id=4, tariff_id=1)),
             ],
             [0, 2],
         ),
@@ -577,12 +585,12 @@ def test_all_entity_batches(input_changed: dict[tuple, list], input_deleted: dic
     [
         (SubscriptionResource.SITE, Site, None),
         (SubscriptionResource.SITE, Site, 4567),
-        (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, DynamicOperatingEnvelope, None),
-        (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, DynamicOperatingEnvelope, 51531),
+        (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, SiteScopedDynamicOperatingEnvelope, None),
+        (SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, SiteScopedDynamicOperatingEnvelope, 51531),
         (SubscriptionResource.READING, SiteReading, None),
         (SubscriptionResource.READING, SiteReading, 8979831),
-        (SubscriptionResource.TARIFF_GENERATED_RATE, TariffGeneratedRate, None),
-        (SubscriptionResource.TARIFF_GENERATED_RATE, TariffGeneratedRate, 98731),
+        (SubscriptionResource.TARIFF_GENERATED_RATE, SiteScopedTariffGeneratedRate, None),
+        (SubscriptionResource.TARIFF_GENERATED_RATE, SiteScopedTariffGeneratedRate, 98731),
         (SubscriptionResource.SITE_DER_AVAILABILITY, SiteDERAvailability, None),
         (SubscriptionResource.SITE_DER_AVAILABILITY, SiteDERAvailability, 89798),
         (SubscriptionResource.SITE_DER_RATING, SiteDERRating, None),
@@ -774,20 +782,35 @@ async def test_check_db_change_or_delete(
     resource = SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE
     timestamp = datetime(2023, 2, 3, 4, 5, 6, tzinfo=UTC)
 
-    # Create some entities that will form 2 batches
-    batch1_entity1: DynamicOperatingEnvelope = generate_class_instance(
-        DynamicOperatingEnvelope, seed=101, site_control_group_id=1, generate_relationships=True
+    # Create some entities that will form 2 batches - batch1_entity1/2 share an (aggregator_id, site_id) so they
+    # fall into the same batch key, batch2_entity1 uses a different one so it forms its own batch
+    batch1_entity1 = SiteScopedDynamicOperatingEnvelope(
+        111,
+        222,
+        generate_class_instance(
+            DynamicOperatingEnvelope, seed=101, site_control_group_id=1, generate_relationships=True
+        ),
     )
-    batch1_entity2: DynamicOperatingEnvelope = generate_class_instance(
-        DynamicOperatingEnvelope, seed=202, site_control_group_id=1, generate_relationships=True
+    batch1_entity2 = SiteScopedDynamicOperatingEnvelope(
+        111,
+        222,
+        generate_class_instance(
+            DynamicOperatingEnvelope, seed=202, site_control_group_id=1, generate_relationships=True
+        ),
     )
-    batch2_entity1: DynamicOperatingEnvelope = generate_class_instance(
-        DynamicOperatingEnvelope, seed=303, site_control_group_id=1, generate_relationships=True
+    batch2_entity1 = SiteScopedDynamicOperatingEnvelope(
+        333,
+        444,
+        generate_class_instance(
+            DynamicOperatingEnvelope, seed=303, site_control_group_id=1, generate_relationships=True
+        ),
     )
-    batch1_entity2.site_id = batch1_entity1.site_id
-    batch1_entity2.site.site_id = batch1_entity1.site.site_id
-    batch1_entity2.site.aggregator_id = batch1_entity1.site.aggregator_id
-    entities = AggregatorBatchedEntities(timestamp, resource, [batch1_entity1, batch1_entity2, batch2_entity1], [])
+    entities = AggregatorBatchedEntities(
+        timestamp,
+        resource,
+        [batch1_entity1, batch1_entity2, batch2_entity1],  # ty:ignore[invalid-argument-type]
+        [],
+    )
     mock_fetch_batched_entities.return_value = entities
 
     # Create some subscriptions for the two aggregators we implied above
@@ -795,7 +818,7 @@ async def test_check_db_change_or_delete(
     agg1_sub2: Subscription = generate_class_instance(Subscription, seed=22, optional_is_none=True)
     agg2_sub1: Subscription = generate_class_instance(Subscription, seed=33)
     mock_select_subscriptions_for_resource.side_effect = lambda session, agg_id, resource: (
-        [agg1_sub1, agg1_sub2] if agg_id == batch1_entity1.site.aggregator_id else [agg2_sub1]
+        [agg1_sub1, agg1_sub2] if agg_id == batch1_entity1.aggregator_id else [agg2_sub1]
     )
 
     # Configure what entities are serviced by what subscription
@@ -848,10 +871,10 @@ async def test_check_db_change_or_delete(
 
     # Subscriptions should only be fetched ONCE for each aggregator
     assert mock_select_subscriptions_for_resource.call_count == 2
-    assert (mock_session, batch1_entity1.site.aggregator_id, resource) in [
+    assert (mock_session, batch1_entity1.aggregator_id, resource) in [
         ca.args for ca in mock_select_subscriptions_for_resource.call_args_list
     ]
-    assert (mock_session, batch2_entity1.site.aggregator_id, resource) in [
+    assert (mock_session, batch2_entity1.aggregator_id, resource) in [
         ca.args for ca in mock_select_subscriptions_for_resource.call_args_list
     ]
 
@@ -864,9 +887,9 @@ async def test_check_db_change_or_delete(
     assert len(set([c for c in all_content])) == len(all_content), "All content must be unique"
 
     # See if our entities appear in the output content (use the timestamp as unique fingerprint)
-    batch1_entity1_fingerprint = f"<start>{str(int(batch1_entity1.start_time.timestamp()))}</start>"
-    batch1_entity2_fingerprint = f"<start>{str(int(batch1_entity2.start_time.timestamp()))}</start>"
-    batch2_entity1_fingerprint = f"<start>{str(int(batch2_entity1.start_time.timestamp()))}</start>"
+    batch1_entity1_fingerprint = f"<start>{str(int(batch1_entity1.original.start_time.timestamp()))}</start>"
+    batch1_entity2_fingerprint = f"<start>{str(int(batch1_entity2.original.start_time.timestamp()))}</start>"
+    batch2_entity1_fingerprint = f"<start>{str(int(batch2_entity1.original.start_time.timestamp()))}</start>"
     assert batch1_entity1_fingerprint in agg1_transmit.content
     assert batch1_entity2_fingerprint in agg1_transmit.content
     assert batch2_entity1_fingerprint not in agg1_transmit.content
@@ -900,16 +923,20 @@ async def test_check_db_change_or_delete_rates(
     timestamp = datetime(2023, 2, 3, 4, 5, 6, tzinfo=UTC)
 
     # Create some entities that will form 2 batches
-    rate1: TariffGeneratedRate = generate_class_instance(TariffGeneratedRate, seed=101, generate_relationships=True)
-    rate2: TariffGeneratedRate = generate_class_instance(TariffGeneratedRate, seed=202, generate_relationships=True)
-    rate2.site_id = rate1.site_id
-    rate2.tariff_id = rate1.tariff_id
-    rate2.site.site_id = rate1.site.site_id
-    rate2.site.aggregator_id = rate1.site.aggregator_id
+    rate1_original: TariffGeneratedRate = generate_class_instance(
+        TariffGeneratedRate, seed=101, generate_relationships=True
+    )
+    rate2_original: TariffGeneratedRate = generate_class_instance(
+        TariffGeneratedRate, seed=202, generate_relationships=True
+    )
+    rate2_original.tariff_id = rate1_original.tariff_id
 
-    rate1.start_time = datetime(2022, 4, 6, 14, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
-    rate2.start_time = datetime(2022, 4, 6, 14, 5, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
-    entities = AggregatorBatchedEntities(timestamp, resource, [rate1, rate2], [])
+    rate1_original.start_time = datetime(2022, 4, 6, 14, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
+    rate2_original.start_time = datetime(2022, 4, 6, 14, 5, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
+
+    rate1 = SiteScopedTariffGeneratedRate(111, 222, rate1_original)
+    rate2 = SiteScopedTariffGeneratedRate(111, 222, rate2_original)
+    entities = AggregatorBatchedEntities(timestamp, resource, [rate1, rate2], [])  # ty:ignore[invalid-argument-type]
     mock_fetch_batched_entities.return_value = entities
 
     # Create a single sub
@@ -946,7 +973,7 @@ async def test_check_db_change_or_delete_rates(
     mock_fetch_batched_entities.assert_called_once_with(mock_session, resource, timestamp)
 
     # Subscriptions should only be fetched ONCE for each aggregator
-    mock_select_subscriptions_for_resource.assert_called_once_with(mock_session, rate1.site.aggregator_id, resource)
+    mock_select_subscriptions_for_resource.assert_called_once_with(mock_session, rate1.aggregator_id, resource)
 
     # check_db_change_or_delete must NOT commit - the caller (process_check_batch) owns the transaction
     assert_mock_session(mock_session, committed=False)
@@ -957,14 +984,14 @@ async def test_check_db_change_or_delete_rates(
     assert len(set([c for c in all_content])) == len(all_content), "All content must be unique"
 
     # See if our entities appear in the output content (use the timestamp as unique fingerprint)
-    rate1_export_active_fingerprint = f"14:00/cti/{rate1.export_active_price * PRICE_DECIMAL_POWER}"
-    rate1_import_active_fingerprint = f"14:00/cti/{rate1.import_active_price * PRICE_DECIMAL_POWER}"
-    rate1_export_reactive_fingerprint = f"14:00/cti/{rate1.export_reactive_price * PRICE_DECIMAL_POWER}"
-    rate1_import_reactive_fingerprint = f"14:00/cti/{rate1.import_reactive_price * PRICE_DECIMAL_POWER}"
-    rate2_export_active_fingerprint = f"14:05/cti/{rate2.export_active_price * PRICE_DECIMAL_POWER}"
-    rate2_import_active_fingerprint = f"14:05/cti/{rate2.import_active_price * PRICE_DECIMAL_POWER}"
-    rate2_export_reactive_fingerprint = f"14:05/cti/{rate2.export_reactive_price * PRICE_DECIMAL_POWER}"
-    rate2_import_reactive_fingerprint = f"14:05/cti/{rate2.import_reactive_price * PRICE_DECIMAL_POWER}"
+    rate1_export_active_fingerprint = f"14:00/cti/{rate1_original.export_active_price * PRICE_DECIMAL_POWER}"
+    rate1_import_active_fingerprint = f"14:00/cti/{rate1_original.import_active_price * PRICE_DECIMAL_POWER}"
+    rate1_export_reactive_fingerprint = f"14:00/cti/{rate1_original.export_reactive_price * PRICE_DECIMAL_POWER}"
+    rate1_import_reactive_fingerprint = f"14:00/cti/{rate1_original.import_reactive_price * PRICE_DECIMAL_POWER}"
+    rate2_export_active_fingerprint = f"14:05/cti/{rate2_original.export_active_price * PRICE_DECIMAL_POWER}"
+    rate2_import_active_fingerprint = f"14:05/cti/{rate2_original.import_active_price * PRICE_DECIMAL_POWER}"
+    rate2_export_reactive_fingerprint = f"14:05/cti/{rate2_original.export_reactive_price * PRICE_DECIMAL_POWER}"
+    rate2_import_reactive_fingerprint = f"14:05/cti/{rate2_original.import_reactive_price * PRICE_DECIMAL_POWER}"
 
     assert (
         len([c for c in all_content if rate1_export_active_fingerprint in c and rate2_export_active_fingerprint in c])

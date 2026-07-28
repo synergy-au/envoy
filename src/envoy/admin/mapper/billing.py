@@ -161,7 +161,9 @@ class BillingMapper:
             yield billing_reading
 
     @staticmethod
-    def map_doe(doe: DynamicOperatingEnvelope) -> BillingDoe:
+    def map_doe(site_id: int, doe: DynamicOperatingEnvelope) -> BillingDoe:
+        """site_id: the specific member site (of doe.site_group_id) this billing row is being generated for - a DOE
+        now targets a SiteGroup rather than a single site, so this must be supplied by the caller."""
         return BillingDoe(
             duration_seconds=doe.duration_seconds,
             export_limit_watts=doe.export_limit_watts if doe.export_limit_watts is not None else Decimal(0),
@@ -169,14 +171,16 @@ class BillingMapper:
                 doe.import_limit_active_watts if doe.import_limit_active_watts is not None else Decimal(0)
             ),
             period_start=doe.start_time,
-            site_id=doe.site_id,
+            site_id=site_id,
         )
 
     @staticmethod
-    def map_rate(r: TariffGeneratedRate) -> BillingTariffRate:
+    def map_rate(site_id: int, r: TariffGeneratedRate) -> BillingTariffRate:
+        """site_id: the specific member site (of r.site_group_id) this billing row is being generated for - a rate
+        now targets a SiteGroup rather than a single site, so this must be supplied by the caller."""
         return BillingTariffRate(
             duration_seconds=r.duration_seconds,
-            site_id=r.site_id,
+            site_id=site_id,
             export_active_price=r.export_active_price,
             export_reactive_price=r.export_reactive_price,
             import_active_price=r.import_active_price,
@@ -197,8 +201,8 @@ class BillingMapper:
             varh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.varh_readings)),
             wh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.wh_readings)),
             watt_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.watt_readings)),
-            active_does=[BillingMapper.map_doe(d) for d in data.active_does],
-            active_tariffs=[BillingMapper.map_rate(r) for r in data.active_tariffs],
+            active_does=[BillingMapper.map_doe(site_id, d) for site_id, d in data.active_does],
+            active_tariffs=[BillingMapper.map_rate(site_id, r) for site_id, r in data.active_tariffs],
         )
 
     @staticmethod
@@ -213,8 +217,8 @@ class BillingMapper:
             varh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.varh_readings)),
             wh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.wh_readings)),
             watt_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.watt_readings)),
-            active_does=[BillingMapper.map_doe(d) for d in data.active_does],
-            active_tariffs=[BillingMapper.map_rate(r) for r in data.active_tariffs],
+            active_does=[BillingMapper.map_doe(site_id, d) for site_id, d in data.active_does],
+            active_tariffs=[BillingMapper.map_rate(site_id, r) for site_id, r in data.active_tariffs],
         )
 
     @staticmethod
@@ -227,6 +231,6 @@ class BillingMapper:
             varh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.varh_readings)),
             wh_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.wh_readings)),
             watt_readings=list(BillingMapper.aggregate_readings_for_site_timestamp(data.watt_readings)),
-            active_does=[BillingMapper.map_doe(d) for d in data.active_does],
-            active_tariffs=[BillingMapper.map_rate(r) for r in data.active_tariffs],
+            active_does=[BillingMapper.map_doe(site_id, d) for site_id, d in data.active_does],
+            active_tariffs=[BillingMapper.map_rate(site_id, r) for site_id, r in data.active_tariffs],
         )

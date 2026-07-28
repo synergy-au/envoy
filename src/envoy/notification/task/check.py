@@ -29,9 +29,11 @@ from envoy.notification.crud.batch import (
     select_subscriptions_for_resource,
 )
 from envoy.notification.crud.common import (
+    SiteScopedDynamicOperatingEnvelope,
     SiteScopedFunctionSetAssignment,
     SiteScopedSiteControlGroup,
     SiteScopedSiteControlGroupDefault,
+    SiteScopedTariffGeneratedRate,
     TArchiveResourceModel,
     TResourceModel,
 )
@@ -42,7 +44,6 @@ from envoy.server.manager.time import utc_now
 from envoy.server.mapper.constants import PricingReadingType
 from envoy.server.mapper.sep2.pub_sub import NotificationMapper, NotificationType, SubscriptionMapper
 from envoy.server.model.config.server import RuntimeServerConfig
-from envoy.server.model.doe import DynamicOperatingEnvelope
 from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus
 from envoy.server.model.site_reading import SiteReading
 from envoy.server.model.subscription import (
@@ -51,7 +52,6 @@ from envoy.server.model.subscription import (
     Subscription,
     SubscriptionResource,
 )
-from envoy.server.model.tariff import TariffGeneratedRate
 from envoy.server.request_scope import AggregatorRequestScope, CertificateType
 
 logger = logging.getLogger(__name__)
@@ -256,12 +256,13 @@ def entities_to_notification(
             raise NotificationError("SubscriptionResource.TARIFF_GENERATED_RATE requires pricing_reading_type")
 
         # TARIFF_GENERATED_RATE: (aggregator_id: int, tariff_id: int, site_id: int, day: date)
-        _, tariff_id, _, day = batch_key
+        _, tariff_id, site_id, day = batch_key
         return NotificationMapper.map_rates_to_response(
             tariff_id=tariff_id,
+            site_id=site_id,
             day=day,
             pricing_reading_type=pricing_reading_type,
-            rates=cast(Sequence[TariffGeneratedRate], entities),
+            rates=[e.original for e in cast(Sequence[SiteScopedTariffGeneratedRate], entities)],
             sub=sub,
             scope=scope,
             notification_type=notification_type,
@@ -271,7 +272,7 @@ def entities_to_notification(
         _, _, site_control_group_id = batch_key
         return NotificationMapper.map_does_to_response(
             site_control_group_id=site_control_group_id,
-            does=cast(Sequence[DynamicOperatingEnvelope], entities),
+            does=[e.original for e in cast(Sequence[SiteScopedDynamicOperatingEnvelope], entities)],
             sub=sub,
             scope=scope,
             notification_type=notification_type,
