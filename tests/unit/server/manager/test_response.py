@@ -715,7 +715,7 @@ async def test_create_response_for_scope_doe_created_normally(
         DynamicOperatingEnvelope,
         seed=303,
         dynamic_operating_envelope_id=decoded_doe_id,
-        site_id=site_id,
+        site_group_id=1,
         display_id=None,
     )
     mock_decode_and_validate_mrid_type.return_value = MridType.DYNAMIC_OPERATING_ENVELOPE
@@ -805,7 +805,7 @@ async def test_create_response_for_scope_doe_created_normally_with_display_id(
         seed=303,
         dynamic_operating_envelope_id=actual_doe_id,
         display_id=decoded_display_id,
-        site_id=site_id,
+        site_group_id=1,
     )
     mock_decode_and_validate_mrid_type.return_value = MridType.DYNAMIC_OPERATING_ENVELOPE
     mock_decode_doe_mrid.return_value = (True, decoded_display_id)
@@ -976,9 +976,7 @@ async def test_create_response_for_scope_price_created_normally(
     scope = generate_class_instance(SiteRequestScope, seed=101, site_id=site_id, href_prefix="/my_prefix/")
     response = generate_class_instance(Response, seed=202)
     decoded_rate_id = 2
-    existing_rate = generate_class_instance(
-        TariffGeneratedRate, seed=303, tariff_generated_rate_id=decoded_rate_id, site_id=site_id
-    )
+    existing_rate = generate_class_instance(TariffGeneratedRate, seed=303, tariff_generated_rate_id=decoded_rate_id)
     mock_decode_and_validate_mrid_type.return_value = MridType.TIME_TARIFF_INTERVAL
     mock_decode_time_tariff_interval_mrid.return_value = decoded_rate_id
     mock_select_tariff_generated_rate_include_deleted.return_value = existing_rate

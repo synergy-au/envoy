@@ -64,7 +64,7 @@ class ArchiveTariffGeneratedRate(ArchiveBase):
     tariff_generated_rate_id: Mapped[int] = mapped_column(BigInteger, index=True)
     tariff_id: Mapped[int] = mapped_column(INTEGER)
     tariff_component_id: Mapped[int] = mapped_column(BigInteger)
-    site_id: Mapped[int] = mapped_column(INTEGER)
+    site_group_id: Mapped[int] = mapped_column(INTEGER)
     calculation_log_id: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))

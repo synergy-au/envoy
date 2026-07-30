@@ -115,7 +115,7 @@ class TariffGeneratedRateListMapper:
         return TariffGeneratedRate(
             tariff_id=tariff_id,
             tariff_component_id=rate.tariff_component_id,
-            site_id=rate.site_id,
+            site_group_id=rate.site_group_id,
             calculation_log_id=rate.calculation_log_id,
             changed_time=changed_time,
             start_time=rate.start_time,

@@ -255,7 +255,7 @@ class TimeTariffIntervalManager:
             return None
 
         now = utc_now()
-        return TimeTariffIntervalMapper.map_to_response(scope, now, rate)
+        return TimeTariffIntervalMapper.map_to_response(scope, scope.site_id, now, rate)
 
 
 class ConsumptionTariffIntervalManager:

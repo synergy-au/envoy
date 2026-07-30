@@ -2,15 +2,18 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import Select, func, literal_column, select
+from sqlalchemy import Select, and_, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import ColumnElement
 
 from envoy.server.crud.common import localize_start_time, localize_start_time_for_entity
+from envoy.server.crud.site_group import site_group_membership_exists as _site_group_membership_exists
+from envoy.server.crud.site_group import site_is_member_of_group as _site_is_member_of_group
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope as ArchiveDOE
 from envoy.server.model.doe import DynamicOperatingEnvelope as DOE
 from envoy.server.model.doe import SiteControlGroup
-from envoy.server.model.site import Site
+from envoy.server.model.site import Site, SiteGroupAssignment
 
 
 async def select_doe_include_deleted(
@@ -38,7 +41,9 @@ async def select_doe_include_deleted(
     # Check primary table first
     primary_table_doe = (
         await session.execute(
-            select(DOE).where((DOE.dynamic_operating_envelope_id == doe_id) & (DOE.site_id == site_id))
+            select(DOE).where(
+                (DOE.dynamic_operating_envelope_id == doe_id) & _site_is_member_of_group(DOE.site_group_id, site_id)
+            )
         )
     ).scalar_one_or_none()
     if primary_table_doe is not None:
@@ -48,7 +53,11 @@ async def select_doe_include_deleted(
     archive_table_doe = (
         await session.execute(
             select(ArchiveDOE)
-            .where((ArchiveDOE.dynamic_operating_envelope_id == doe_id) & (ArchiveDOE.deleted_time.is_not(None)))
+            .where(
+                (ArchiveDOE.dynamic_operating_envelope_id == doe_id)
+                & (ArchiveDOE.deleted_time.is_not(None))
+                & _site_is_member_of_group(ArchiveDOE.site_group_id, site_id)
+            )
             .order_by(ArchiveDOE.deleted_time.desc())
         )
     ).scalar_one_or_none()
@@ -82,7 +91,9 @@ async def select_doe_by_display_id_include_deleted(
 
     # Check primary table first
     primary_table_doe = (
-        await session.execute(select(DOE).where((DOE.display_id == display_id) & (DOE.site_id == site_id)))
+        await session.execute(
+            select(DOE).where((DOE.display_id == display_id) & _site_is_member_of_group(DOE.site_group_id, site_id))
+        )
     ).scalar_one_or_none()
     if primary_table_doe is not None:
         return localize_start_time_for_entity(primary_table_doe, site_timezone_id)
@@ -93,7 +104,7 @@ async def select_doe_by_display_id_include_deleted(
             select(ArchiveDOE)
             .where(
                 (ArchiveDOE.display_id == display_id)
-                & (ArchiveDOE.site_id == site_id)
+                & _site_is_member_of_group(ArchiveDOE.site_group_id, site_id)
                 & (ArchiveDOE.deleted_time.is_not(None))
             )
             .order_by(ArchiveDOE.deleted_time.desc())
@@ -129,15 +140,34 @@ async def _does_at_timestamp(
     if is_counting:
         select_clause = select(func.count()).select_from(DOE)
     else:
-        select_clause = select(DOE, Site.timezone_id)
+        # Site is resolved via a scalar subquery (not a join) so a DOE row can never fan out to more than one
+        # result row, regardless of how many sites are in its SiteGroup. When site_id is None, we arbitrarily
+        # (but deterministically) pick one member site belonging to aggregator_id to localize the start time.
+        site_timezone_conditions: list[ColumnElement[bool]] = [
+            SiteGroupAssignment.site_group_id == DOE.site_group_id,
+            Site.aggregator_id == aggregator_id,
+        ]
+        if site_id is not None:
+            site_timezone_conditions.append(SiteGroupAssignment.site_id == site_id)
+        site_timezone_subquery = (
+            select(Site.timezone_id)
+            .join(SiteGroupAssignment, SiteGroupAssignment.site_id == Site.site_id)
+            .where(and_(*site_timezone_conditions))
+            .order_by(SiteGroupAssignment.site_id.asc())
+            .limit(1)
+            .correlate(DOE)
+            .scalar_subquery()
+        )
+        select_clause = select(DOE, site_timezone_subquery)
 
+    # Membership/aggregator-ownership check via a correlated EXISTS - never a join, so it can't fan a DOE row out
+    # into multiple results regardless of how many sites are in its SiteGroup
     stmt = (
-        select_clause.join(DOE.site)
-        .where(
+        select_clause.where(
             (DOE.site_control_group_id == site_control_group_id)
             & (DOE.end_time > timestamp)
             & (DOE.start_time <= timestamp)
-            & (Site.aggregator_id == aggregator_id)
+            & _site_group_membership_exists(DOE.site_group_id, aggregator_id=aggregator_id, site_id=site_id)
         )
         .offset(start)
         .limit(limit)
@@ -145,9 +175,6 @@ async def _does_at_timestamp(
 
     if changed_after != datetime.min:
         stmt = stmt.where(DOE.changed_time >= changed_after)
-
-    if site_id is not None:
-        stmt = stmt.where(DOE.site_id == site_id)
 
     if not is_counting:
         stmt = stmt.order_by(DOE.start_time.asc(), DOE.changed_time.desc(), DOE.dynamic_operating_envelope_id.desc())
@@ -177,7 +204,9 @@ async def count_active_does_include_deleted(
         select(func.count())
         .select_from(DOE)
         .where(
-            (DOE.site_control_group_id == site_control_group_id) & (DOE.end_time > now) & (DOE.site_id == site.site_id)
+            (DOE.site_control_group_id == site_control_group_id)
+            & (DOE.end_time > now)
+            & _site_is_member_of_group(DOE.site_group_id, site.site_id)
         )
     )
     count_archive_does_stmt = (
@@ -186,7 +215,7 @@ async def count_active_does_include_deleted(
         .where(
             (ArchiveDOE.site_control_group_id == site_control_group_id)
             & (ArchiveDOE.end_time > now)
-            & (ArchiveDOE.site_id == site.site_id)
+            & _site_is_member_of_group(ArchiveDOE.site_group_id, site.site_id)
             & (ArchiveDOE.deleted_time.is_not(None))
         )
     )
@@ -226,7 +255,7 @@ async def select_active_does_include_deleted(
     select_active_does = select(
         DOE.dynamic_operating_envelope_id,
         DOE.site_control_group_id,
-        DOE.site_id,
+        DOE.site_group_id,
         DOE.calculation_log_id,
         DOE.created_time,
         DOE.changed_time,
@@ -249,12 +278,16 @@ async def select_active_does_include_deleted(
         literal_column("NULL").label("archive_time"),
         literal_column("NULL").label("deleted_time"),
         literal_column("0").label("is_archive"),
-    ).where((DOE.site_control_group_id == site_control_group_id) & (DOE.end_time > now) & (DOE.site_id == site.site_id))
+    ).where(
+        (DOE.site_control_group_id == site_control_group_id)
+        & (DOE.end_time > now)
+        & _site_is_member_of_group(DOE.site_group_id, site.site_id)
+    )
 
     select_archive_does = select(
         ArchiveDOE.dynamic_operating_envelope_id,
         ArchiveDOE.site_control_group_id,
-        ArchiveDOE.site_id,
+        ArchiveDOE.site_group_id,
         ArchiveDOE.calculation_log_id,
         ArchiveDOE.created_time,
         ArchiveDOE.deleted_time.label(ArchiveDOE.changed_time.name),  # Changed time will be using "deleted_time"
@@ -280,7 +313,7 @@ async def select_active_does_include_deleted(
     ).where(
         (ArchiveDOE.site_control_group_id == site_control_group_id)
         & (ArchiveDOE.end_time > now)
-        & (ArchiveDOE.site_id == site.site_id)
+        & _site_is_member_of_group(ArchiveDOE.site_group_id, site.site_id)
         & (ArchiveDOE.deleted_time.is_not(None))
     )
 
@@ -306,7 +339,7 @@ async def select_active_does_include_deleted(
                 ArchiveDOE(
                     dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
                     site_control_group_id=t.site_control_group_id,
-                    site_id=t.site_id,
+                    site_group_id=t.site_group_id,
                     calculation_log_id=t.calculation_log_id,
                     created_time=t.created_time,
                     changed_time=t.changed_time,
@@ -336,7 +369,7 @@ async def select_active_does_include_deleted(
                 DOE(
                     dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
                     site_control_group_id=t.site_control_group_id,
-                    site_id=t.site_id,
+                    site_group_id=t.site_group_id,
                     calculation_log_id=t.calculation_log_id,
                     created_time=t.created_time,
                     changed_time=t.changed_time,

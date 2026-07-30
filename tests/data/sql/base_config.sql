@@ -102,6 +102,32 @@ INSERT INTO public.tariff("tariff_id", "name", "dnsp_code", "currency_code", "fs
 SELECT pg_catalog.setval('public.tariff_tariff_id_seq', 4, true);
 
 
+INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (1, '2000-01-01 00:00:00Z', '2024-02-10 01:55:44.500', 'Group-1');
+INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (2, '2000-01-01 00:00:00Z', '2024-02-10 02:55:44.500', 'Group-2');
+INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (3, '2000-01-01 00:00:00Z', '2024-02-10 03:55:44.500', 'Group-3');
+-- Group-4/Group-5 exist purely so DOEs/TariffGeneratedRates that used to target a single site (site_id 2 /
+-- site_id 3 respectively) have an equivalent singleton SiteGroup to target, preserving their original
+-- per-site scope exactly.
+INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (4, '2000-01-01 00:00:00Z', '2024-02-10 04:55:44.500', 'Group-4-Site2');
+INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (5, '2000-01-01 00:00:00Z', '2024-02-10 05:55:44.500', 'Group-5-Site3');
+
+SELECT pg_catalog.setval('public.site_group_site_group_id_seq', 6, true);
+
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (1, '2000-01-01 00:00:00Z', '2024-02-11 01:55:44.500', 1, 1);
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (2, '2000-01-01 00:00:00Z', '2024-02-11 02:55:44.500', 2, 1);
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (3, '2000-01-01 00:00:00Z', '2024-02-11 03:55:44.500', 3, 1);
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (4, '2000-01-01 00:00:00Z', '2024-02-11 04:55:44.500', 1, 2);
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (5, '2000-01-01 00:00:00Z', '2024-02-11 05:55:44.500', 2, 4);
+INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
+VALUES (6, '2000-01-01 00:00:00Z', '2024-02-11 06:55:44.500', 3, 5);
+
+SELECT pg_catalog.setval('public.site_group_assignment_site_group_assignment_id_seq', 7, true);
+
 -- TC #1 (Under Tariff #1)  - Import Active Power kw/h
 INSERT INTO public.tariff_component("tariff_component_id", "tariff_id", "role_flags", "accumulation_behaviour", "commodity", "data_qualifier", "flow_direction", "kind", "phase", "power_of_ten_multiplier", "uom", "created_time", "changed_time")
 VALUES (1, 1, 1, 3, 2, 2, 1, 12, 0, 3, 38, '2000-01-01 00:00:00Z', '2022-02-01 01:00:00+10');
@@ -120,29 +146,30 @@ VALUES (4, 2, 3, 3, 2, 2, 1, 12, 0, 3, 38, '2000-01-01 00:00:00Z', '2022-02-01 0
 
 SELECT pg_catalog.setval('public.tariff_component_tariff_component_id_seq', 5, true);
 
--- Site #1 rates for TC #1
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (1, 1, 1, 1, 2, '2022-03-05 01:00:00+10', 11, '2022-03-05 01:00:11+10', 1111, 1000, 1001, '2000-01-01 00:00:00Z', '2022-03-04 11:22:33.500');
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (2, 1, 1, 1, 2, '2022-03-05 01:00:11+10', 22, '2022-03-05 01:00:33+10', 2222, NULL, NULL, '2000-01-01 00:00:00Z', '2022-03-04 12:22:33.500');
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (3, 1, 1, 1, 2, '2022-03-05 01:00:33+10', 33, '2022-03-05 01:01:06+10', 3333, 3000, 3001, '2000-01-01 00:00:00Z', '2022-03-04 13:22:33.500');
+-- Group #1 (matches Site #1 only) rates for TC #1
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (1, 1, 1, 2, 2, '2022-03-05 01:00:00+10', 11, '2022-03-05 01:00:11+10', 1111, 1000, 1001, '2000-01-01 00:00:00Z', '2022-03-04 11:22:33.500');
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (2, 1, 1, 2, 2, '2022-03-05 01:00:11+10', 22, '2022-03-05 01:00:33+10', 2222, NULL, NULL, '2000-01-01 00:00:00Z', '2022-03-04 12:22:33.500');
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (3, 1, 1, 2, 2, '2022-03-05 01:00:33+10', 33, '2022-03-05 01:01:06+10', 3333, 3000, 3001, '2000-01-01 00:00:00Z', '2022-03-04 13:22:33.500');
 
--- Site #2 rates for TC #1
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (4, 1, 1, 2, NULL, '2022-03-05 01:00:00+10', 44, '2022-03-05 01:00:44+10', 4444, NULL, NULL, '2000-01-01 00:00:00Z', '2022-03-04 14:22:33.500');
+-- Group #4 (matches Site #4 only) rates for TC #1
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (4, 1, 1, 4, NULL, '2022-03-05 01:00:00+10', 44, '2022-03-05 01:00:44+10', 4444, NULL, NULL, '2000-01-01 00:00:00Z', '2022-03-04 14:22:33.500');
 
--- Site #3 rates for TC #1
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (5, 1, 1, 3, NULL, '2022-03-05 01:00:00+10', 55, '2022-03-05 01:00:55+10', 5555, 5000, 5001, '2000-01-01 00:00:00Z', '2022-03-04 15:22:33.500');
+-- Group #5 (matches Site #3 only) rates for TC #1
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (5, 1, 1, 5, NULL, '2022-03-05 01:00:00+10', 55, '2022-03-05 01:00:55+10', 5555, 5000, 5001, '2000-01-01 00:00:00Z', '2022-03-04 15:22:33.500');
 
--- Site #1 rates for TC #2
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (6, 1, 2, 1, NULL, '2022-03-05 01:00:00+10', 66, '2022-03-05 01:01:06+10', 6666, 6000, 6001, '2000-01-01 00:00:00Z', '2022-03-04 16:22:33.500');
+-- Group #2 (matches Site #1 only) rates for TC #2
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (6, 1, 2, 2, NULL, '2022-03-05 01:00:00+10', 66, '2022-03-05 01:01:06+10', 6666, 6000, 6001, '2000-01-01 00:00:00Z', '2022-03-04 16:22:33.500');
 
--- Site #1 rates for TC #4
-INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
-VALUES (7, 2, 4, 1, NULL, '2022-03-05 01:00:00+10', 77, '2022-03-05 01:01:17+10', 7777, 7000, 7001, '2000-01-01 00:00:00Z', '2022-03-04 17:22:33.500');
+-- Group #2 (matches Site #1 only) rates for TC #4
+INSERT INTO public.tariff_generated_rate("tariff_generated_rate_id", "tariff_id", "tariff_component_id", "site_group_id", "calculation_log_id", "start_time", "duration_seconds", "end_time", "price_pow10_encoded", "block_1_start_pow10_encoded", "price_pow10_encoded_block_1", "created_time", "changed_time")
+VALUES (7, 2, 4, 2, NULL, '2022-03-05 01:00:00+10', 77, '2022-03-05 01:01:17+10', 7777, 7000, 7001, '2000-01-01 00:00:00Z', '2022-03-04 17:22:33.500');
+
 
 SELECT pg_catalog.setval('public.tariff_generated_rate_tariff_generated_rate_id_seq', 7, true);
 
@@ -154,14 +181,14 @@ INSERT INTO public.tariff_generated_rate_response("tariff_generated_rate_respons
 SELECT pg_catalog.setval('public.tariff_generated_rate_respons_tariff_generated_rate_respons_seq', 4, true);
 
 
-INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
-VALUES (1, 1, 1, 2, '2000-01-01 00:00:00Z', '2022-05-06 11:22:33.500', '2022-05-07 01:02+10', 11, 111, '2022-05-07 01:02:11+10', FALSE, 1.11, -1.22, 1.33, -1.44, 1.55, 1.66, 1.33);
-INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
-VALUES (2, 1, 1, 2, '2000-01-01 00:00:00Z', '2022-05-06 12:22:33.500', '2022-05-07 03:04+10', 22, NULL, '2022-05-07 03:04:22+10', TRUE, 2.11, -2.22, NULL, NULL, NULL, NULL, 2.33);
-INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
-VALUES (3, 1, 2, 2, '2000-01-01 00:00:00Z', '2022-05-06 13:22:33.500', '2022-05-07 01:02+10', 33, 333, '2022-05-07 01:02:33+10', FALSE, 3.11, -3.22, 3.33, -3.44, 3.55, 3.66, 3.33);
-INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
-VALUES (4, 1, 1, NULL, '2000-01-01 00:00:00Z', '2022-05-06 14:22:33.500', '2022-05-08 01:02+10', 44, 444, '2022-05-08 01:02:44+10', FALSE, 4.11, -4.22, 4.33, -4.44, 4.55, 4.66, 4.33);
+INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_group_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
+VALUES (1, 1, 2, 2, '2000-01-01 00:00:00Z', '2022-05-06 11:22:33.500', '2022-05-07 01:02+10', 11, 111, '2022-05-07 01:02:11+10', FALSE, 1.11, -1.22, 1.33, -1.44, 1.55, 1.66, 1.33);
+INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_group_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
+VALUES (2, 1, 2, 2, '2000-01-01 00:00:00Z', '2022-05-06 12:22:33.500', '2022-05-07 03:04+10', 22, NULL, '2022-05-07 03:04:22+10', TRUE, 2.11, -2.22, NULL, NULL, NULL, NULL, 2.33);
+INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_group_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
+VALUES (3, 1, 4, 2, '2000-01-01 00:00:00Z', '2022-05-06 13:22:33.500', '2022-05-07 01:02+10', 33, 333, '2022-05-07 01:02:33+10', FALSE, 3.11, -3.22, 3.33, -3.44, 3.55, 3.66, 3.33);
+INSERT INTO public.dynamic_operating_envelope("dynamic_operating_envelope_id", "site_control_group_id", "site_group_id", "calculation_log_id", "created_time", "changed_time", "start_time", "duration_seconds", "randomize_start_seconds", "end_time", "superseded", "import_limit_active_watts", "export_limit_watts", "generation_limit_active_watts", "load_limit_active_watts", "set_point_percentage", "ramp_time_seconds", "storage_target_active_watts")
+VALUES (4, 1, 2, NULL, '2000-01-01 00:00:00Z', '2022-05-06 14:22:33.500', '2022-05-08 01:02+10', 44, 444, '2022-05-08 01:02:44+10', FALSE, 4.11, -4.22, 4.33, -4.44, 4.55, 4.66, 4.33);
 
 SELECT pg_catalog.setval('public.dynamic_operating_envelope_dynamic_operating_envelope_id_seq', 5, true);
 
@@ -433,24 +460,6 @@ VALUES (2, -- subscription_condition_id
     );
 
 SELECT pg_catalog.setval('public.subscription_condition_subscription_condition_id_seq', 3, true);
-
-
-INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (1, '2000-01-01 00:00:00Z', '2024-02-10 01:55:44.500', 'Group-1');
-INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (2, '2000-01-01 00:00:00Z', '2024-02-10 02:55:44.500', 'Group-2');
-INSERT INTO public.site_group("site_group_id", "created_time", "changed_time", "name") VALUES (3, '2000-01-01 00:00:00Z', '2024-02-10 03:55:44.500', 'Group-3');
-
-SELECT pg_catalog.setval('public.site_group_site_group_id_seq', 4, true);
-
-INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
-VALUES (1, '2000-01-01 00:00:00Z', '2024-02-11 01:55:44.500', 1, 1);
-INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
-VALUES (2, '2000-01-01 00:00:00Z', '2024-02-11 02:55:44.500', 2, 1);
-INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
-VALUES (3, '2000-01-01 00:00:00Z', '2024-02-11 03:55:44.500', 3, 1);
-INSERT INTO public.site_group_assignment("site_group_assignment_id", "created_time", "changed_time", "site_id", "site_group_id")
-VALUES (4, '2000-01-01 00:00:00Z', '2024-02-11 04:55:44.500', 1, 2);
-
-SELECT pg_catalog.setval('public.site_group_assignment_site_group_assignment_id_seq', 5, true);
 
 
 -- These DER values have been autogenerated due to their enormous size

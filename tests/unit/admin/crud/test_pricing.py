@@ -173,7 +173,7 @@ async def test_insert_many_tariff_genrate_insert(pg_base_config):
 
     async with generate_async_session(pg_base_config) as session:
         rate_in: TariffGeneratedRate = generate_class_instance(
-            TariffGeneratedRate, generate_relationships=False, site_id=1, tariff_id=1, tariff_component_id=1
+            TariffGeneratedRate, generate_relationships=False, site_group_id=1, tariff_id=1, tariff_component_id=1
         )
         # clean up generated instance to ensure it doesn't clash with base_config
         del rate_in.tariff_generated_rate_id
@@ -203,7 +203,7 @@ async def test_insert_many_tariff_genrate_insert(pg_base_config):
 
         rate_in_1 = generate_class_instance(
             TariffGeneratedRate,
-            site_id=1,
+            site_group_id=1,
             tariff_id=1,
             tariff_component_id=1,
             start_time=rate_in.start_time + timedelta(seconds=1),
@@ -226,13 +226,13 @@ async def test_insert_many_tariff_genrate_overlapping(pg_base_config):
     async with generate_async_session(pg_base_config) as session:
         original_rate = await _select_latest_tariff_generated_rate(session)
         cloned_original_rate = clone_class_instance(
-            original_rate, ignored_properties={"tariff", "site", "tariff_component"}
+            original_rate, ignored_properties={"tariff", "site_group", "tariff_component"}
         )
 
         # clean up generated instance to ensure it doesn't clash with base_config
         rate_to_insert: TariffGeneratedRate = clone_class_instance(
             original_rate,
-            ignored_properties={"tariff_generated_rate_id", "created_time", "site", "tariff", "tariff_component"},
+            ignored_properties={"tariff_generated_rate_id", "created_time", "site_group", "tariff", "tariff_component"},
         )
         rate_to_insert.price_pow10_encoded += 123
         rate_to_insert.changed_time = datetime(2026, 1, 3, tzinfo=UTC)
@@ -302,13 +302,13 @@ async def test_select_single_tariff_generated_rate(pg_base_config):
 
         rate1 = await select_single_tariff_generated_rate(session, 1)
         assert isinstance(rate1, TariffGeneratedRate)
-        assert rate1.site_id == 1
+        assert rate1.site_group_id == 2
         assert rate1.price_pow10_encoded == 1111
         assert rate1.price_pow10_encoded_block_1 == 1001
 
         rate4 = await select_single_tariff_generated_rate(session, 4)
         assert isinstance(rate4, TariffGeneratedRate)
-        assert rate4.site_id == 2
+        assert rate4.site_group_id == 4
         assert rate4.price_pow10_encoded == 4444
         assert rate4.price_pow10_encoded_block_1 is None
 

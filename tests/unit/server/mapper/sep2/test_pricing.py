@@ -327,10 +327,10 @@ def test_time_tariff_interval_map_to_response(
 
     scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=101, href_prefix="/pfx")
     rate = generate_class_instance(type, seed=202, optional_is_none=optional_is_none)
-
+    site_id = 54321
     now = rate.start_time + time_diff
 
-    mapped = TimeTariffIntervalMapper.map_to_response(scope, now, rate)
+    mapped = TimeTariffIntervalMapper.map_to_response(scope, now, rate, site_id)
     assert isinstance(mapped, TimeTariffIntervalResponse)
 
     if type == ArchiveTariffGeneratedRate and rate.deleted_time is not None:  # ty:ignore[unresolved-attribute]
@@ -430,11 +430,11 @@ def test_mrid_uniqueness():
     rate.tariff_id = id
     rate.tariff_component_id = id
     rate.tariff_generated_rate_id = id
-    rate.site_id = id
+    rate.site_group_id = id
 
     scope: DeviceOrAggregatorRequestScope = generate_class_instance(DeviceOrAggregatorRequestScope)
 
-    tti = TimeTariffIntervalMapper.map_to_response(scope, now, rate)
+    tti = TimeTariffIntervalMapper.map_to_response(scope, now, rate, id)
     rc = RateComponentMapper.map_to_response(scope, component, 999)
     tp = TariffProfileMapper.map_to_response(scope, tariff, 999, 999)
 

@@ -375,7 +375,7 @@ async def test_no_update_tariff_genrate(pg_base_config, admin_client_auth: Async
     # This should overlap tariff_generated_rate_id 1
     updated_rate = TariffGeneratedRateRequest(
         tariff_component_id=1,
-        site_id=1,
+        site_group_id=2,
         start_time=datetime(2022, 3, 5, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
         duration_seconds=1113,
         calculation_log_id=3,
@@ -565,7 +565,7 @@ async def test_get_tariff_generated_rates_response_fields(admin_client_auth: Asy
     assert rate.tariff_generated_rate_id == 1
     assert rate.tariff_id == 1
     assert rate.tariff_component_id == 1
-    assert rate.site_id == 1
+    assert rate.site_group_id == 2
     assert rate.calculation_log_id == 2
     assert rate.duration_seconds == 11
     assert rate.price_pow10_encoded == 1111

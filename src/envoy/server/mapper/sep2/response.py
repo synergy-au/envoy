@@ -83,15 +83,19 @@ class ResponseMapper:
 
     @staticmethod
     def map_from_price_request(
-        r: PriceResponse | Response, tariff_generated_rate: TariffGeneratedRate | ArchiveTariffGeneratedRate
+        r: PriceResponse | Response,
+        tariff_generated_rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
+        site_id: int,
     ) -> TariffGeneratedRateResponse:
         """Maps a sep2 PriceResponse to an internal TariffGeneratedRateResponse model that references a specific
-        PricingReadingType within a TariffGeneratedRate"""
+        PricingReadingType within a TariffGeneratedRate
+
+        site_id: The specific member site (of tariff_generated_rate.site_group_id) this response applies to"""
 
         # createdTime will be managed by the DB itself
         return TariffGeneratedRateResponse(
             tariff_generated_rate_id_snapshot=tariff_generated_rate.tariff_generated_rate_id,
-            site_id=tariff_generated_rate.site_id,
+            site_id=site_id,
             response_type=r.status,
         )
 
@@ -122,13 +126,18 @@ class ResponseMapper:
     def map_from_doe_request(
         r: DERControlResponse | Response,
         dynamic_operating_envelope: DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope,
+        site_id: int,
     ) -> DynamicOperatingEnvelopeResponse:
-        """Maps a sep2 DERControlResponse to an internal DynamicOperatingEnvelopeResponse model."""
+        """Maps a sep2 DERControlResponse to an internal DynamicOperatingEnvelopeResponse model.
+
+        site_id: The site that is submitting this response (a DOE now targets a SiteGroup rather than a single
+        site, so this can no longer be derived from dynamic_operating_envelope itself - it must be supplied by the
+        caller, e.g. from the request scope)"""
 
         # createdTime will be managed by the DB itself
         return DynamicOperatingEnvelopeResponse(
             dynamic_operating_envelope_id_snapshot=dynamic_operating_envelope.dynamic_operating_envelope_id,
-            site_id=dynamic_operating_envelope.site_id,
+            site_id=site_id,
             response_type=r.status,
         )
 

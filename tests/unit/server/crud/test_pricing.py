@@ -25,6 +25,10 @@ AEST = timezone(timedelta(hours=10))
 UTC = UTC
 BASE = datetime(2000, 1, 1, tzinfo=UTC)  # Convenience - used a lot for initial creation times
 
+# TariffGeneratedRate now targets a SiteGroup rather than a single Site. base_config.sql sets up a singleton
+# SiteGroup per legacy site_id so every existing test fixture rate still targets exactly one site, matching this map.
+SITE_ID_TO_SINGLETON_GROUP_ID = {1: 2, 2: 4, 3: 5}
+
 
 @pytest.mark.parametrize(
     "changed_after, expected_fsa_ids",
@@ -280,56 +284,56 @@ def assert_rate_for_id(
             case 1:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 2:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 11, tzinfo=AEST)
             case 3:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 33, tzinfo=AEST)
             case 4:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 2
+                assert actual_rate.site_group_id == 4
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 5:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 3
+                assert actual_rate.site_group_id == 5
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 6:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 2
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 7:
                 assert actual_rate.tariff_id == 2
                 assert actual_rate.tariff_component_id == 4
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 8:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 1, 6, tzinfo=AEST)
                 assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 30, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
             case 9:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 2, 34, tzinfo=AEST)
                 assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 35, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
