@@ -385,7 +385,7 @@ def test_time_tariff_interval_map_to_response(
 @pytest.mark.parametrize("tariff_component_id", [None, 716874614])
 def test_time_tariff_interval_map_to_list_response(tariff_component_id: int | None):
     """Non exhaustive test on TimeTariffIntervalList mapping - mainly to catch any validation issues"""
-    scope = generate_class_instance(DeviceOrAggregatorRequestScope, seed=1001, href_prefix="/pfx")
+    scope = generate_class_instance(SiteRequestScope, seed=1001, href_prefix="/pfx")
     rates: list[TariffGeneratedRate] = [
         generate_class_instance(TariffGeneratedRate, seed=101, optional_is_none=False),
         generate_class_instance(TariffGeneratedRate, seed=202, optional_is_none=True),

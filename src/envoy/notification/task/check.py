@@ -233,11 +233,12 @@ def entities_to_notification(  # noqa: C901
         )
     elif resource == SubscriptionResource.TARIFF_GENERATED_RATE:
         # TARIFF_GENERATED_RATE: (aggregator_id: int, tariff_id: int, site_id: int, tariff_component_id: int)
-        _, tariff_id, _, tariff_component_id = batch_key
+        _, tariff_id, site_id, tariff_component_id = batch_key
         return NotificationMapper.map_rates_to_response(
             tariff_id=tariff_id,
+            site_id=site_id,
             tariff_component_id=tariff_component_id,
-            rates=cast(Sequence[SiteScopedTariffGeneratedRate], entities),
+            rates=[e.original for e in cast(Sequence[SiteScopedTariffGeneratedRate], entities)],
             sub=sub,
             scope=scope,
             notification_type=notification_type,
@@ -345,11 +346,12 @@ def entities_to_notification(  # noqa: C901
         return NotificationMapper.map_tariffs_to_response(tariffs, sub, scope, notification_type)
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
         # COMBINED_TARIFF_GENERATED_RATE: (aggregator_id: int, tariff_id: int, site_id: int)
-        _, tariff_id, _ = batch_key
+        _, tariff_id, site_id = batch_key
         return NotificationMapper.map_rates_to_response(
             tariff_id=tariff_id,
+            site_id=site_id,
             tariff_component_id=None,
-            rates=cast(Sequence[TariffGeneratedRate], entities),
+            rates=[e.original for e in cast(Sequence[SiteScopedTariffGeneratedRate], entities)],
             sub=sub,
             scope=scope,
             notification_type=notification_type,

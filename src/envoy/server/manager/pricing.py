@@ -25,6 +25,7 @@ from envoy.server.crud.pricing import (
     select_tariff_generated_rate_include_deleted,
 )
 from envoy.server.crud.site import select_single_site_with_site_id
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.exception import NotFoundError
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
@@ -48,14 +49,16 @@ class TariffProfileManager:
         if tariff is None:
             return None
 
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if site is None:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             return None
 
         now = utc_now()
         total_components = await count_tariff_components_by_tariff(session, tariff_id, None)
         total_rates = await count_active_rates_include_deleted(
-            session, tariff_id, None, scope.site_id, now, datetime.min
+            session, tariff_id, None, site_group_ids, now, datetime.min
         )
         return TariffProfileMapper.map_to_response(scope, tariff, total_components, total_rates)
 
@@ -71,6 +74,12 @@ class TariffProfileManager:
         """Fetches all tariffs accessible to a specific site (and optionally scoped to a specific function set
         assignment id)."""
 
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
+            return None
+
         tariffs = await select_all_tariffs(session, start, changed_after, limit, fsa_id)
         tariff_count = await select_tariff_count(session, changed_after, fsa_id)
 
@@ -83,7 +92,7 @@ class TariffProfileManager:
             tariff_component_counts.append(total_components)
 
             total_rates = await count_active_rates_include_deleted(
-                session, tariff.tariff_id, None, scope.site_id, now, datetime.min
+                session, tariff.tariff_id, None, site_group_ids, now, datetime.min
             )
             tariff_rate_counts.append(total_rates)
 
@@ -125,8 +134,10 @@ class RateComponentManager:
     ) -> RateComponentResponse | None:
         """Fetches a RateComponent underneath a specific tariff_id - returns None if it DNE"""
 
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if site is None:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             return None
 
         tc = await select_tariff_component_by_id(session, rate_component_id)
@@ -135,7 +146,7 @@ class RateComponentManager:
 
         now = utc_now()
         total_rates = await count_active_rates_include_deleted(
-            session, tariff_id, rate_component_id, scope.site_id, now, changed_after=datetime.min
+            session, tariff_id, rate_component_id, site_group_ids, now, changed_after=datetime.min
         )
         return RateComponentMapper.map_to_response(scope, tc, total_rates)
 
@@ -147,19 +158,24 @@ class RateComponentManager:
         start: int,
         changed_after: datetime | None,
         limit: int,
-    ) -> RateComponentListResponse:
+    ) -> RateComponentListResponse | None:
         """Fetches all RateComponent's underneath a specific Tariff via a list endpoint"""
 
         now = utc_now()
 
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
+            return None
+
         tcs = await select_tariff_components_by_tariff(session, tariff_id, start, changed_after, limit)
         tc_count = await count_tariff_components_by_tariff(session, tariff_id, changed_after)
-
         tcs_rate_counts: list[int] = []
         for tc in tcs:
             tcs_rate_counts.append(
                 await count_active_rates_include_deleted(
-                    session, tariff_id, tc.tariff_component_id, scope.site_id, now, changed_after
+                    session, tariff_id, tc.tariff_component_id, site_group_ids, now, changed_after
                 )
             )
 
@@ -182,8 +198,10 @@ class TimeTariffIntervalManager:
         """Fetches a page of TimeTariffInterval entities and returns them in a list response. Raises NotFoundError
         if the specified site scope DNE"""
 
-        existing_site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if existing_site is None:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             raise NotFoundError(f"/edev/{scope.site_id} does not exist or is inaccessible.")
 
         existing_rc = await select_tariff_component_by_id(session, rate_component_id)
@@ -192,10 +210,10 @@ class TimeTariffIntervalManager:
 
         now = utc_now()
         rates = await select_active_rates_include_deleted(
-            session, tariff_id, rate_component_id, existing_site, now, start, after, limit
+            session, tariff_id, rate_component_id, site_group_ids, now, start, after, limit
         )
         total_rates = await count_active_rates_include_deleted(
-            session, tariff_id, rate_component_id, existing_site.site_id, now, after
+            session, tariff_id, rate_component_id, site_group_ids, now, after
         )
 
         # fetch runtime server config
@@ -217,17 +235,17 @@ class TimeTariffIntervalManager:
         """Fetches a page of TimeTariffInterval entities (across every RateComponent) for the specified site and returns
         them in a list response. Raises NotFoundError if the specified site scope DNE"""
 
-        existing_site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if existing_site is None:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             raise NotFoundError(f"/edev/{scope.site_id} does not exist / is inaccessible.")
 
         now = utc_now()
         rates = await select_active_rates_include_deleted(
-            session, tariff_id, None, existing_site, now, start, after, limit
+            session, tariff_id, None, site_group_ids, now, start, after, limit
         )
-        total_rates = await count_active_rates_include_deleted(
-            session, tariff_id, None, existing_site.site_id, now, after
-        )
+        total_rates = await count_active_rates_include_deleted(session, tariff_id, None, site_group_ids, now, after)
 
         # fetch runtime server config
         config = await RuntimeServerConfigManager.fetch_current_config(session)
@@ -255,7 +273,7 @@ class TimeTariffIntervalManager:
             return None
 
         now = utc_now()
-        return TimeTariffIntervalMapper.map_to_response(scope, scope.site_id, now, rate)
+        return TimeTariffIntervalMapper.map_to_response(scope, now, rate, scope.site_id)
 
 
 class ConsumptionTariffIntervalManager:

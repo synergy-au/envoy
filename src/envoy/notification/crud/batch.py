@@ -1,4 +1,3 @@
-import copy
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 from itertools import chain
@@ -33,7 +32,6 @@ from envoy.notification.crud.common import (
     TResourceModel,
 )
 from envoy.notification.exception import NotificationError
-from envoy.server.crud.common import localize_start_time_for_entity
 from envoy.server.crud.server import select_server_config
 from envoy.server.manager.der_constants import PUBLIC_SITE_DER_ID
 from envoy.server.model.aggregator import Aggregator
@@ -195,8 +193,8 @@ def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tup
         tariff = cast(SiteScopedTariff, entity)
         return (tariff.aggregator_id, tariff.site_id)
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
-        rate = cast(TariffGeneratedRate, entity)
-        return (rate.site.aggregator_id, rate.tariff_id, rate.site_id)
+        rate = cast(SiteScopedTariffGeneratedRate, entity)
+        return (rate.aggregator_id, rate.original.tariff_id, rate.site_id)
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate batch key")
 
@@ -241,7 +239,7 @@ def get_subscription_filter_id(resource: SubscriptionResource, entity: TResource
         return cast(SiteScopedTariff, entity).original.fsa_id
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
         # rate subscriptions can be scoped to a single tariff
-        return cast(TariffGeneratedRate, entity).tariff_id
+        return cast(SiteScopedTariffGeneratedRate, entity).original.tariff_id
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate primary key")
 
@@ -275,7 +273,7 @@ def get_site_id(resource: SubscriptionResource, entity: TResourceModel) -> int:
     elif resource == SubscriptionResource.TARIFF:
         return cast(SiteScopedTariff, entity).site_id
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
-        return cast(TariffGeneratedRate, entity).site_id
+        return cast(SiteScopedTariffGeneratedRate, entity).site_id
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate site id")
 
@@ -344,47 +342,41 @@ async def fetch_rates_by_changed_at(
         for e in cast(Iterable[TariffGeneratedRate | ArchiveTariffGeneratedRate], chain(active_rates, deleted_rates))
     }
 
-    member_sites_by_group_id: dict[int, list[tuple[int, int, str]]] = {}
+    member_sites_by_group_id: dict[int, list[tuple[int, int]]] = {}
     if referenced_site_group_ids:
         member_sites = (
             await session.execute(
-                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id, Site.timezone_id)
+                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id)
                 .join(Site, Site.site_id == SiteGroupAssignment.site_id)
                 .where(SiteGroupAssignment.site_group_id.in_(referenced_site_group_ids))
             )
         ).all()
-        for site_group_id, aggregator_id, site_id, timezone_id in member_sites:
-            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id, timezone_id))
-
-    def expand_rate(rate: TariffGeneratedRate | ArchiveTariffGeneratedRate) -> list[tuple[int, int, Any]]:
-        """Expands a single rate into one (aggregator_id, site_id, localized_rate) tuple per member site of its
-        SiteGroup. Each site gets its own copy of rate since start_time localization mutates in place and
-        different member sites can be in different timezones."""
-        return [
-            (aggregator_id, site_id, localize_start_time_for_entity(copy.copy(rate), timezone_id))
-            for aggregator_id, site_id, timezone_id in member_sites_by_group_id.get(rate.site_group_id, [])
-        ]
+        for site_group_id, aggregator_id, site_id in member_sites:
+            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id))
 
     site_scoped_active_rates = [
-        SiteScopedTariffGeneratedRate(aggregator_id, site_id, localized_rate)
+        SiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
         for rate in cast(Iterable[TariffGeneratedRate], active_rates)
-        for aggregator_id, site_id, localized_rate in expand_rate(rate)
+        for aggregator_id, site_id in member_sites_by_group_id.get(rate.site_group_id, [])
     ]
     site_scoped_deleted_rates = [
-        ArchiveSiteScopedTariffGeneratedRate(aggregator_id, site_id, localized_rate)
+        ArchiveSiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
         for rate in cast(Iterable[ArchiveTariffGeneratedRate], deleted_rates)
-        for aggregator_id, site_id, localized_rate in expand_rate(rate)
+        for aggregator_id, site_id in member_sites_by_group_id.get(rate.site_group_id, [])
     ]
 
     return [
         AggregatorBatchedEntities(
-            timestamp, SubscriptionResource.TARIFF_GENERATED_RATE, site_scoped_active_rates, site_scoped_deleted_rates
+            timestamp,
+            SubscriptionResource.TARIFF_GENERATED_RATE,
+            site_scoped_active_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
+            site_scoped_deleted_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
         ),
         AggregatorBatchedEntities(
             timestamp,
             SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE,
-            site_scoped_active_rates,
-            site_scoped_deleted_rates,
+            site_scoped_active_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
+            site_scoped_deleted_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
         ),
     ]
 
@@ -410,36 +402,27 @@ async def fetch_does_by_changed_at(
         )
     }
 
-    member_sites_by_group_id: dict[int, list[tuple[int, int, str]]] = {}
+    member_sites_by_group_id: dict[int, list[tuple[int, int]]] = {}
     if referenced_site_group_ids:
         member_sites = (
             await session.execute(
-                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id, Site.timezone_id)
+                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id)
                 .join(Site, Site.site_id == SiteGroupAssignment.site_id)
                 .where(SiteGroupAssignment.site_group_id.in_(referenced_site_group_ids))
             )
         ).all()
-        for site_group_id, aggregator_id, site_id, timezone_id in member_sites:
-            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id, timezone_id))
-
-    def expand_doe(doe: DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope) -> list[tuple[int, int, Any]]:
-        """Expands a single doe into one (aggregator_id, site_id, localized_doe) tuple per member site of its
-        SiteGroup. Each site gets its own copy of doe since start_time localization mutates in place and different
-        member sites can be in different timezones."""
-        return [
-            (aggregator_id, site_id, localize_start_time_for_entity(copy.copy(doe), timezone_id))
-            for aggregator_id, site_id, timezone_id in member_sites_by_group_id.get(doe.site_group_id, [])
-        ]
+        for site_group_id, aggregator_id, site_id in member_sites:
+            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id))
 
     site_scoped_active_does = [
-        SiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, localized_doe)
+        SiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, doe)
         for doe in cast(Iterable[DynamicOperatingEnvelope], active_does)
-        for aggregator_id, site_id, localized_doe in expand_doe(doe)
+        for aggregator_id, site_id in member_sites_by_group_id.get(doe.site_group_id, [])
     ]
     site_scoped_deleted_does = [
-        ArchiveSiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, localized_doe)
+        ArchiveSiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, doe)
         for doe in cast(Iterable[ArchiveDynamicOperatingEnvelope], deleted_does)
-        for aggregator_id, site_id, localized_doe in expand_doe(doe)
+        for aggregator_id, site_id in member_sites_by_group_id.get(doe.site_group_id, [])
     ]
 
     return AggregatorBatchedEntities(

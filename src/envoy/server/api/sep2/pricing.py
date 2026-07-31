@@ -82,6 +82,8 @@ async def get_tariffprofilelist_fsa_scoped(
         limit=extract_limit_from_paging_param(limit),
         fsa_id=fsa_id,
     )
+    if tp_list is None:
+        raise LoggedHttpException(logger, None, status_code=HTTPStatus.NOT_FOUND, detail="Not found")
 
     return XmlResponse(tp_list)
 
@@ -142,6 +144,8 @@ async def get_ratecomponentlist(
         changed_after=extract_datetime_from_paging_param(after),
         limit=extract_limit_from_paging_param(limit),
     )
+    if rc_list is None:
+        raise LoggedHttpException(logger, None, status_code=HTTPStatus.NOT_FOUND, detail="Not found")
     return XmlResponse(rc_list)
 
 

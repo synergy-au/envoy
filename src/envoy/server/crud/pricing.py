@@ -4,9 +4,8 @@ from datetime import datetime
 from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from envoy.server.crud.site_group import site_group_membership_exists, site_is_member_of_group
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
-from envoy.server.model.site import Site
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 
 
@@ -97,9 +96,14 @@ async def select_tariff_generated_rate_include_deleted(
     aggregator_id: The aggregator id to constrain the lookup to
     site_id: filter on site_id using this value against SiteGroup membership"""
 
+    # Start by confirming the referenced site_id exists within the specified aggregator.
+    site_group_ids = await fetch_site_group_membership(session, aggregator_id=aggregator_id, site_id=site_id)
+    if not site_group_ids:
+        return None
+
     stmt_active = select(TariffGeneratedRate).where(
         (TariffGeneratedRate.tariff_generated_rate_id == rate_id)
-        & site_group_membership_exists(TariffGeneratedRate.site_group_id, aggregator_id=aggregator_id, site_id=site_id)
+        & (TariffGeneratedRate.site_group_id.in_(site_group_ids))
     )
 
     resp_active = await session.execute(stmt_active)
@@ -113,9 +117,7 @@ async def select_tariff_generated_rate_include_deleted(
         .where(
             (ArchiveTariffGeneratedRate.tariff_generated_rate_id == rate_id)
             & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))  # Only deleted records
-            & site_group_membership_exists(
-                ArchiveTariffGeneratedRate.site_group_id, aggregator_id=aggregator_id, site_id=site_id
-            )
+            & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
         )
         .order_by(ArchiveTariffGeneratedRate.deleted_time.desc())
         .limit(1)  # Only the most recent deletion (realistically there will only ever be one anyway)
@@ -181,7 +183,7 @@ async def count_active_rates_include_deleted(
     session: AsyncSession,
     tariff_id: int,
     tariff_component_id: int | None,
-    site_id: int,
+    site_group_ids: set[int],
     now: datetime,
     changed_after: datetime | None,
 ) -> int:
@@ -189,17 +191,14 @@ async def count_active_rates_include_deleted(
 
     tariff_id: The parent TariffID to filter results to (only used if tariff_component_id is None)
     tariff_component_id: If specified - ONLY filter for results underneath this ID (tariff_id is NOT considered)
-    site_id: The site that the counted rates will be all be scoped from (will be filtered via SiteGroup membership)
+    site_group_ids: The site groups that the counted rates will be all be scoped from
     now: The timestamp that excludes any rate whose end_time precedes this (they are expired and no longer relevant)
     changed_after: Only rates modified after this time will be counted."""
 
     count_active_rates_stmt = (
         select(func.count())
         .select_from(TariffGeneratedRate)
-        .where(
-            (TariffGeneratedRate.end_time > now)
-            & site_group_membership_exists(TariffGeneratedRate.site_group_id, aggregator_id=None, site_id=site_id)
-        )
+        .where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_group_id.in_(site_group_ids)))
     )
     if tariff_component_id is None:
         count_active_rates_stmt = count_active_rates_stmt.where(TariffGeneratedRate.tariff_id == tariff_id)
@@ -214,9 +213,7 @@ async def count_active_rates_include_deleted(
         .where(
             (ArchiveTariffGeneratedRate.end_time > now)
             & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))
-            & site_group_membership_exists(
-                ArchiveTariffGeneratedRate.site_group_id, aggregator_id=None, site_id=site_id
-            )
+            & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
         )
     )
     if tariff_component_id is None:
@@ -243,7 +240,7 @@ async def select_active_rates_include_deleted(
     session: AsyncSession,
     tariff_id: int,
     tariff_component_id: int | None,
-    site: Site,
+    site_group_ids: set[int],
     now: datetime,
     start: int,
     changed_after: datetime | None,
@@ -254,7 +251,7 @@ async def select_active_rates_include_deleted(
 
     tariff_id: The parent TariffID to filter results to (only used if tariff_component_id is None)
     tariff_component_id: If specified - ONLY filter for results underneath this ID (tariff_id is NOT considered)
-    site: Only TariffGeneratedRate from this site will be included
+    site_group_ids: Only TariffGeneratedRate from these SiteGroup.site_group_id will be included
     now: The timestamp that excludes any TariffGeneratedRate whose end_time precedes this (i.e. they are expired and no
          longer relevant)
     start: How many TariffGeneratedRate to skip
@@ -281,10 +278,7 @@ async def select_active_rates_include_deleted(
         literal_column("NULL").label("archive_time"),
         literal_column("NULL").label("deleted_time"),
         literal_column("0").label("is_archive"),
-    ).where(
-        (TariffGeneratedRate.end_time > now)
-        & (site_is_member_of_group(TariffGeneratedRate.site_group_id, site_id=site.site_id))
-    )
+    ).where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_group_id.in_(site_group_ids)))
     if tariff_component_id is None:
         select_active_rates = select_active_rates.where(TariffGeneratedRate.tariff_id == tariff_id)
     else:
@@ -311,7 +305,7 @@ async def select_active_rates_include_deleted(
     ).where(
         (ArchiveTariffGeneratedRate.end_time > now)
         & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))
-        & (site_is_member_of_group(ArchiveTariffGeneratedRate.site_group_id, site_id=site.site_id))
+        & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
     )
     if tariff_component_id is None:
         select_archive_rates = select_archive_rates.where(ArchiveTariffGeneratedRate.tariff_id == tariff_id)

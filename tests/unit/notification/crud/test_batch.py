@@ -317,12 +317,15 @@ def test_get_batch_key_invalid():
         ),
         (
             SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE,
-            TariffGeneratedRate(
-                tariff_generated_rate_id=99,
-                site_id=3,
-                tariff_id=2,
-                tariff_component_id=4,
-                site=Site(site_id=3, aggregator_id=1),
+            SiteScopedTariffGeneratedRate(
+                1,
+                2,
+                TariffGeneratedRate(
+                    tariff_generated_rate_id=99,
+                    site_group_id=3,
+                    tariff_id=2,
+                    tariff_component_id=4,
+                ),
             ),
             (1, 2, 3),
         ),
@@ -375,15 +378,18 @@ def test_get_subscription_filter_id_invalid():
         ),
         (
             SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE,
-            TariffGeneratedRate(
-                tariff_generated_rate_id=999,
-                site_id=3,
-                tariff_id=2,
-                tariff_component_id=4,
-                start_time=datetime(2023, 2, 3, 4, 5, 6),
+            SiteScopedTariffGeneratedRate(
+                1,
+                2,
+                TariffGeneratedRate(
+                    tariff_generated_rate_id=999,
+                    site_group_id=3,
+                    tariff_id=4,
+                    tariff_component_id=5,
+                    start_time=datetime(2023, 2, 3, 4, 5, 6),
                 ),
             ),
-            2,
+            4,
         ),
         (
             SubscriptionResource.DEFAULT_SITE_CONTROL,
@@ -449,6 +455,19 @@ def test_get_site_id_invalid():
         ),
         (
             SubscriptionResource.TARIFF_GENERATED_RATE,
+            SiteScopedTariffGeneratedRate(
+                1,
+                3,
+                TariffGeneratedRate(
+                    tariff_generated_rate_id=99,
+                    tariff_id=2,
+                    start_time=datetime(2023, 2, 3, 4, 5, 6),
+                ),
+            ),
+            3,
+        ),
+        (
+            SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE,
             SiteScopedTariffGeneratedRate(
                 1,
                 3,
@@ -714,8 +733,20 @@ async def test_fetch_rates_by_timestamp(pg_base_config, timestamp: datetime, exp
 
         # we should be getting 2 batches - one grouped by RateComponent, the other grouped by Tariff
         assert_list_type(AggregatorBatchedEntities, batches, count=2)
-        assert_batched_entities(batches[0], SiteScopedTariffGeneratedRate, ArchiveSiteScopedTariffGeneratedRate, len(expected_rates), 0)
-        assert_batched_entities(batches[1], SiteScopedTariffGeneratedRate, ArchiveSiteScopedTariffGeneratedRate, len(expected_rates), 0)
+        assert_batched_entities(
+            batches[0],
+            SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+            ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+            len(expected_rates),
+            0,
+        )
+        assert_batched_entities(
+            batches[1],
+            SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+            ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+            len(expected_rates),
+            0,
+        )
 
         for batch in batches:
             list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
@@ -755,7 +786,13 @@ async def test_fetch_rates_by_timestamp_multiple_aggs(pg_base_config):
         batches = await fetch_rates_by_changed_at(session, timestamp)
 
         for batch in batches:
-            assert_batched_entities(batch, SiteScopedTariffGeneratedRate, ArchiveSiteScopedTariffGeneratedRate, len(all_entities), 0)
+            assert_batched_entities(
+                batch,
+                SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                len(all_entities),
+                0,
+            )
             list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
             list_entities.sort(key=lambda rate: rate.tariff_generated_rate_id)
 
@@ -872,8 +909,8 @@ async def test_fetch_rates_by_timestamp_with_archive(pg_base_config):
         for batch in batches:
             assert_batched_entities(
                 batches[0],
-                SiteScopedTariffGeneratedRate,
-                ArchiveSiteScopedTariffGeneratedRate,
+                SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
                 len(expected_active_rate_ids),
                 len(expected_deleted_rate_ids),
             )
@@ -907,16 +944,16 @@ async def test_fetch_rates_by_timestamp_with_archive(pg_base_config):
             )
 
         # Sanity check that a different timestamp yields nothing
-        empty_batch = await fetch_rates_by_changed_at(session, timestamp - timedelta(milliseconds=50))
-        assert_batched_entities(
-            empty_batch,
-            SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
-            ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
-            0,
-            0,
-        )
-        assert len(empty_batch.models_by_batch_key) == 0
-        assert len(empty_batch.deleted_by_batch_key) == 0
+        for empty_batch in await fetch_rates_by_changed_at(session, timestamp - timedelta(milliseconds=50)):
+            assert_batched_entities(
+                empty_batch,
+                SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                0,
+                0,
+            )
+            assert len(empty_batch.models_by_batch_key) == 0
+            assert len(empty_batch.deleted_by_batch_key) == 0
 
 
 @pytest.mark.parametrize(

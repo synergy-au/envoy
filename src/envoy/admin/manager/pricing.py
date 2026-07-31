@@ -19,12 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
-    count_tariff_generated_rates_for_period,
     insert_many_tariff_genrate,
     insert_single_tariff,
     select_single_tariff_generated_rate,
     select_tariff_components_for_tariff,
-    select_tariff_generated_rates_for_period,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
     update_single_tariff_component,
@@ -209,35 +207,3 @@ class TariffGeneratedRateManager:
         await session.commit()
 
         return BatchCreateResponse(ids=cast(list[int], insert_ids))
-
-    @staticmethod
-    async def fetch_rates_for_period(
-        session: AsyncSession,
-        tariff_component_id: int,
-        start: int,
-        limit: int,
-        period_start: datetime,
-        period_end: datetime,
-        site_id: int | None = None,
-    ) -> TariffGeneratedRatePageResponse:
-        """Fetch paginated tariff generated rates for a time period scoped to a TariffComponent.
-        Raises NoResultFound if the TariffComponent does not exist."""
-        tc = await select_tariff_component_by_id(session, tariff_component_id)
-        if tc is None:
-            raise NoResultFound
-        total_count = await count_tariff_generated_rates_for_period(
-            session, tariff_component_id, period_start, period_end, site_id
-        )
-        rates = await select_tariff_generated_rates_for_period(
-            session, tariff_component_id, start, limit, period_start, period_end, site_id
-        )
-        return TariffGeneratedRateListMapper.map_to_page_response(
-            total_count=total_count,
-            rates=rates,
-            tariff_component_id=tariff_component_id,
-            start=start,
-            limit=limit,
-            period_start=period_start,
-            period_end=period_end,
-            site_id=site_id,
-        )

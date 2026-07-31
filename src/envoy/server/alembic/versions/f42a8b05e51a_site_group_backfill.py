@@ -1,6 +1,7 @@
 """site_group_backfill
 
-Revision ID: ed47bdab477f
+
+Revision ID: f42a8b05e51a
 Revises: 2593d6e055bb
 Create Date: 2026-07-27 00:00:00.000000
 
@@ -24,7 +25,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "ed47bdab477f"
+revision = "f42a8b05e51a"
 down_revision = "2593d6e055bb"
 branch_labels = None
 depends_on = None

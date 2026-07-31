@@ -1,39 +1,3 @@
-from typing import TypeVar
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import Row
-
-from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
-from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
-from envoy.server.model.doe import DynamicOperatingEnvelope
-from envoy.server.model.tariff import TariffGeneratedRate
-
-EntityWithStartTime = TypeVar(
-    "EntityWithStartTime",
-    bound=TariffGeneratedRate | ArchiveTariffGeneratedRate | DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope,
-)
-
-
-def localize_start_time_for_entity(entity: EntityWithStartTime, tz_name: str) -> EntityWithStartTime:
-    """Localizes a entity.start_time to be in the local timezone passed in as the second
-    element in the tuple. Returns the Entity (it will be modified in place)"""
-    tz = ZoneInfo(tz_name)
-    entity.start_time = entity.start_time.astimezone(tz)
-    return entity
-
-
-def localize_start_time(entity_and_tz: Row[tuple[EntityWithStartTime, str]] | None) -> EntityWithStartTime:
-    """Localizes a Entity.start_time to be in the local timezone passed in as the second
-    element in the tuple. Returns the Entity (it will be modified in place)"""
-    if entity_and_tz is None:
-        raise ValueError("row is None")
-
-    entity: EntityWithStartTime
-    tz_name: str
-    entity, tz_name = entity_and_tz
-    return localize_start_time_for_entity(entity, tz_name)
-
-
 def sum_digits(n: int) -> int:
     """Sums all base10 digits in n and returns the results.
     Eg:

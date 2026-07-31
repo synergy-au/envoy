@@ -142,7 +142,7 @@ def test_tariff_genrate_mapper_to_response(optional_is_none: bool):
     assert isinstance(resp, TariffGeneratedRateResponse)
     assert resp.tariff_generated_rate_id == mdl.tariff_generated_rate_id
     assert resp.tariff_id == mdl.tariff_id
-    assert resp.site_id == mdl.site_id
+    assert resp.site_group_id == mdl.site_group_id
     assert resp.calculation_log_id == mdl.calculation_log_id
     assert resp.start_time == mdl.start_time
     assert resp.duration_seconds == mdl.duration_seconds

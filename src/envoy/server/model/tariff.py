@@ -14,8 +14,7 @@ from envoy_schema.server.schema.sep2.types import (
 from sqlalchemy import INTEGER, VARCHAR, BigInteger, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from envoy.server.model import Base
-from envoy.server.model.site import Site
+from envoy.server.model import Base, SiteGroup
 
 
 class Tariff(Base):
@@ -133,11 +132,11 @@ class TariffGeneratedRate(Base):
     )  # When the rate was created/changed
 
     tariff_component: Mapped["TariffComponent"] = relationship(back_populates="tariff_generated_rates", lazy="raise")
-    site: Mapped["Site"] = relationship(lazy="raise")
+    site_group: Mapped[SiteGroup] = relationship(lazy="raise")
 
     __table_args__ = (
         Index(
-            "ix_tariff_generated_rate_tariff_component_id_end_time_site_group_id",
+            "ix_tariff_generated_rate_tariff_component_id_end_time_group_id",
             "tariff_component_id",
             "end_time",
             "site_group_id",

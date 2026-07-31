@@ -378,7 +378,7 @@ class TimeTariffIntervalMapper:
 
     @staticmethod
     def map_to_list_response(
-        scope: DeviceOrAggregatorRequestScope,
+        scope: SiteRequestScope,
         tariff_id: int,
         tariff_component_id: int | None,
         now: datetime,
@@ -407,5 +407,7 @@ class TimeTariffIntervalMapper:
             subscribable=SubscribableType.resource_supports_non_conditional_subscriptions,
             all_=total,
             results=len(rates),
-            TimeTariffInterval=[TimeTariffIntervalMapper.map_to_response(scope, now, rate) for rate in rates],
+            TimeTariffInterval=[
+                TimeTariffIntervalMapper.map_to_response(scope, now, rate, scope.site_id) for rate in rates
+            ],
         )

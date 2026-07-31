@@ -954,14 +954,12 @@ async def test_check_db_change_or_delete_rates(
     )
     rate2_original.site_group_id = rate1_original.site_group_id
     rate2_original.tariff_id = rate1_original.tariff_id
-    rate2_original.site.site_id = rate1_original.site.site_id
-    rate2_original.site.aggregator_id = rate1_original.site.aggregator_id
 
     rate1_original.start_time = datetime(2022, 4, 6, 14, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
     rate2_original.start_time = datetime(2022, 4, 6, 14, 5, 0, tzinfo=ZoneInfo("Australia/Brisbane"))
     rate1 = SiteScopedTariffGeneratedRate(111, 222, rate1_original)
     rate2 = SiteScopedTariffGeneratedRate(111, 222, rate2_original)
-    entities = AggregatorBatchedEntities(timestamp, resource, [rate1, rate2], [])
+    entities = AggregatorBatchedEntities(timestamp, resource, [rate1, rate2], [])  # ty:ignore[invalid-argument-type]
     mock_fetch_batched_entities.return_value = [entities]
 
     # Create a single sub
@@ -999,7 +997,7 @@ async def test_check_db_change_or_delete_rates(
     mock_fetch_batched_entities.assert_called_once_with(mock_session, resource, timestamp)
 
     # Subscriptions should only be fetched ONCE for each aggregator
-    mock_select_subscriptions_for_resource.assert_called_once_with(mock_session, rate1_original.aggregator_id, resource)
+    mock_select_subscriptions_for_resource.assert_called_once_with(mock_session, rate1.aggregator_id, resource)
 
     # check_db_change_or_delete must NOT commit - the caller (process_check_batch) owns the transaction
     assert_mock_session(mock_session, committed=False)
