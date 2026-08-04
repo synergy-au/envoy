@@ -29,6 +29,7 @@ class ArchiveTariff(ArchiveBase):
     primacy: Mapped[int] = mapped_column(INTEGER)
 
     fsa_id: Mapped[int] = mapped_column(Integer)
+    required_site_group_id: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

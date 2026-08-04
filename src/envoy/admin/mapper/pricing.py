@@ -24,6 +24,7 @@ class TariffMapper:
             currency_code=tariff.currency_code,
             dnsp_code=tariff.dnsp_code,
             fsa_id=tariff.fsa_id,
+            required_site_group_id=tariff.required_site_group_id,
             price_power_of_ten_multiplier=tariff.price_power_of_ten_multiplier,
             primacy=tariff.primacy,
         )

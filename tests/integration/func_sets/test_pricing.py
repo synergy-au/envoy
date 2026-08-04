@@ -20,9 +20,10 @@ from envoy_schema.server.schema.sep2.pricing import (
 )
 from freezegun import freeze_time
 from httpx import AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 from envoy.server.manager.time import utc_now
+from envoy.server.model import Tariff
 from envoy.server.model.server import RuntimeServerConfig
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_FINGERPRINT as AGG_1_VALID_CERT
 from tests.integration.integration_server import cert_header
@@ -36,18 +37,77 @@ def agg_1_headers():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("db_poll_rate, expected_poll_rate", [(None, 900), (300, 300), (3600, 3600)])
-async def test_get_tariff_profile_list_poll_rate(
-    pg_base_config, client: AsyncClient, agg_1_headers, db_poll_rate: int | None, expected_poll_rate: int
+@pytest.mark.parametrize("price_reading_type", PricingReadingType)
+async def test_get_pricingreadingtype(client: AsyncClient, price_reading_type: PricingReadingType, agg_1_headers):
+    """Checks we get a valid pricing reading type for each enum value."""
+    path = uri.PricingReadingTypeUri.format(reading_type=price_reading_type.value)
+    response = await client.get(path, headers=agg_1_headers)
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    # The unit tests will do the heavy lifting - this is just a sanity check
+    parsed_response: ReadingType = ReadingType.from_xml(body)
+    assert parsed_response.commodity
+    assert parsed_response.flowDirection
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "start,limit,changed_after,expected_tariffs",
+    [
+        (None, None, None, ["/tp/3"]),
+        (0, 99, None, ["/tp/3", "/tp/2", "/tp/1"]),
+        (0, 99, datetime(2023, 1, 2, 12, 1, 2, tzinfo=UTC), ["/tp/3", "/tp/2"]),
+        (1, 1, None, ["/tp/2"]),
+    ],
+)
+async def test_get_tariffprofilelist_nosite(
+    client: AsyncClient,
+    agg_1_headers,
+    start: int | None,
+    limit: int | None,
+    changed_after: datetime | None,
+    expected_tariffs: list[str],
 ):
+    """Tests that the list pagination works correctly on the unscoped tariff profile list"""
+    path = uri.TariffProfileListUnscopedUri + build_paging_params(start, limit, changed_after)
+    response = await client.get(path, headers=agg_1_headers)
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
 
-    # Preload the DB with the RunTimeServerConfig
-    async with generate_async_session(pg_base_config) as session:
-        await session.execute(delete(RuntimeServerConfig))
-        session.add(RuntimeServerConfig(changed_time=utc_now(), tp_pollrate_seconds=db_poll_rate))
-        await session.commit()
+    parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
+    assert parsed_response.results == len(expected_tariffs)
+    assert len(parsed_response.TariffProfile or []) == len(expected_tariffs)
+    assert expected_tariffs == [tp.href for tp in parsed_response.TariffProfile or []]
 
-    path = uri.TariffProfileFSAListUri.format(site_id=1, fsa_id=1)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "site_id, start, limit, changed_after, expected_tariffs_with_count",
+    [
+        # basic pagination
+        (1, None, None, None, [("/edev/1/tp/3", 0)]),
+        (1, 0, 99, None, [("/edev/1/tp/3", 0), ("/edev/1/tp/2", 0), ("/edev/1/tp/1", 8)]),
+        (1, 0, 99, datetime(2023, 1, 2, 12, 1, 2, tzinfo=UTC), [("/edev/1/tp/3", 0), ("/edev/1/tp/2", 0)]),
+        (1, 1, 1, None, [("/edev/1/tp/2", 0)]),
+        # changing site id
+        (2, 0, 99, None, [("/edev/2/tp/3", 0), ("/edev/2/tp/2", 0), ("/edev/2/tp/1", 4)]),
+        (3, 0, 99, None, [("/edev/3/tp/3", 0), ("/edev/3/tp/2", 0), ("/edev/3/tp/1", 0)]),  # no access to this site
+    ],
+)
+async def test_get_tariffprofilelist(
+    client: AsyncClient,
+    agg_1_headers,
+    site_id: int,
+    start: int | None,
+    limit: int | None,
+    changed_after: datetime | None,
+    expected_tariffs_with_count: list[tuple[str, int]],
+):
+    """Tests that the list pagination works correctly on the site scoped tariff profile list"""
+    path = uri.TariffProfileListUri.format(site_id=site_id) + build_paging_params(start, limit, changed_after)
     response = await client.get(path, headers=agg_1_headers)
     assert_response_header(response, HTTPStatus.OK)
     body = read_response_body_string(response)
@@ -56,6 +116,63 @@ async def test_get_tariff_profile_list_poll_rate(
     parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
     assert isinstance(parsed_response.pollRate, int)
     assert parsed_response.pollRate == expected_poll_rate
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "site_id, start, limit, changed_after, expected_tariffs_with_count",
+    [
+        (
+            1,
+            0,
+            99,
+            None,
+            [("/edev/1/tp/3", 0), ("/edev/1/tp/2", 0), ("/edev/1/tp/1", 8)],
+        ),  # Site 1 is a member of group 1/2
+        (2, 0, 99, None, [("/edev/2/tp/2", 0)]),  # Site 2 is a member of group 1
+        (4, 0, 99, None, []),  # Site 4 has no group
+        (1, 2, 99, None, [("/edev/1/tp/1", 8)]),  # Site 1 is a member of group 1/2
+        (1, 1, 1, None, [("/edev/1/tp/2", 0)]),  # Site 1 is a member of group 1/2
+    ],
+)
+async def test_get_tariffprofilelist_required_site_group_id(
+    pg_base_config,
+    client: AsyncClient,
+    agg_1_headers,
+    site_id: int,
+    start: int | None,
+    limit: int | None,
+    changed_after: datetime | None,
+    expected_tariffs_with_count: list[tuple[str, int]],
+):
+    """Tests getting TariffProfile filters on required_site_group_id"""
+
+    # Arrange - setup every Tariff to be restricted to Group #1 / #2 membership
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(update(Tariff).values(required_site_group_id=2).where(Tariff.tariff_id.in_([1, 3])))
+        await session.execute(update(Tariff).values(required_site_group_id=1).where(Tariff.tariff_id.in_([2])))
+        await session.commit()
+    path = uri.TariffProfileListUri.format(site_id=site_id) + build_paging_params(start, limit, changed_after)
+    response = await client.get(path, headers=agg_1_headers)
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
+    assert parsed_response
+    assert parsed_response.href == uri.TariffProfileListUri.format(site_id=site_id)
+    assert parsed_response.results == len(expected_tariffs_with_count)
+    assert len(parsed_response.TariffProfile or []) == len(expected_tariffs_with_count)
+
+    # Check that the rate counts and referenced rate component counts match our expectations
+    expected_tariffs = [href for (href, _) in expected_tariffs_with_count]
+    expected_rate_counts = [rate_count for (_, rate_count) in expected_tariffs_with_count]
+    assert expected_tariffs == [tp.href for tp in parsed_response.TariffProfile or []]
+    assert expected_rate_counts == [
+        tp.RateComponentListLink.all_
+        for tp in parsed_response.TariffProfile or []
+        if tp.RateComponentListLink is not None
+    ]
 
 
 @pytest.mark.anyio

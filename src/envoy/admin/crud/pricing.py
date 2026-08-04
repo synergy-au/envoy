@@ -36,6 +36,7 @@ async def update_single_tariff(session: AsyncSession, updated_tariff: Tariff, ch
     tariff.dnsp_code = updated_tariff.dnsp_code
     tariff.name = updated_tariff.name
     tariff.currency_code = updated_tariff.currency_code
+    tariff.required_site_group_id = updated_tariff.required_site_group_id
     tariff.fsa_id = updated_tariff.fsa_id
     tariff.primacy = updated_tariff.primacy
     tariff.price_power_of_ten_multiplier = updated_tariff.price_power_of_ten_multiplier

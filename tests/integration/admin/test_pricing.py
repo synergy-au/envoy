@@ -54,7 +54,7 @@ async def test_get_single_tariff(admin_client_auth: AsyncClient):
 @pytest.mark.anyio
 async def test_create_tariff_with_fetch(admin_client_auth: AsyncClient):
     """Can we create a Tariff and then refetch the thing we just created"""
-    tariff = generate_class_instance(TariffRequest)
+    tariff = generate_class_instance(TariffRequest, required_site_group_id=None)
     resp = await admin_client_auth.post(TariffCreateUri, json=tariff.model_dump())
 
     assert resp.status_code == HTTPStatus.CREATED
