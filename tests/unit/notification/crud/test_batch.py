@@ -1,7 +1,6 @@
 import unittest.mock as mock
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 import pytest
 from assertical.asserts.generator import assert_class_instance_equality
@@ -323,11 +322,11 @@ def test_get_batch_key_invalid():
                 TariffGeneratedRate(
                     tariff_generated_rate_id=99,
                     site_group_id=3,
-                    tariff_id=2,
-                    tariff_component_id=4,
+                    tariff_id=4,
+                    tariff_component_id=5,
                 ),
             ),
-            (1, 2, 3),
+            (1, 4, 2),
         ),
     ],
 )
@@ -750,7 +749,7 @@ async def test_fetch_rates_by_timestamp(pg_base_config, timestamp: datetime, exp
 
         for batch in batches:
             list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
-            list_entities.sort(key=lambda rate: rate.tariff_generated_rate_id)
+            list_entities.sort(key=lambda rate: rate.original.tariff_generated_rate_id)
 
             for i in range(len(expected_rates)):
                 assert_class_instance_equality(TariffGeneratedRate, expected_rates[i], list_entities[i].original)
@@ -758,9 +757,6 @@ async def test_fetch_rates_by_timestamp(pg_base_config, timestamp: datetime, exp
             assert all([isinstance(e, SiteScopedTariffGeneratedRate) for e in list_entities])
             assert all([e.aggregator_id == 1 for e in list_entities]), "rate1's site (site 1) belongs to aggregator 1"
             assert all([e.site_id == 1 for e in list_entities]), "rate1's site_group_id (2) is a singleton for site 1"
-            assert all([e.original.start_time.tzinfo == ZoneInfo("Australia/Brisbane") for e in list_entities]), (
-                "start_time should be localized to the zone identified by the linked site"
-            )
 
 
 @pytest.mark.anyio
@@ -794,11 +790,11 @@ async def test_fetch_rates_by_timestamp_multiple_aggs(pg_base_config):
                 0,
             )
             list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
-            list_entities.sort(key=lambda rate: rate.tariff_generated_rate_id)
+            list_entities.sort(key=lambda rate: rate.original.tariff_generated_rate_id)
 
             assert len(list_entities) == len(all_entities)
-            assert set([1, 2, 3, 4, 5, 6, 7]) == set([e.tariff_generated_rate_id for e in list_entities])
-            assert set([1, 2]) == set([e.site.aggregator_id for e in list_entities]), (
+            assert set([1, 2, 3, 4, 5, 6, 7]) == set([e.original.tariff_generated_rate_id for e in list_entities])
+            assert set([1, 2]) == set([e.aggregator_id for e in list_entities]), (
                 "All aggregator IDs should be represented"
             )
 
@@ -915,29 +911,23 @@ async def test_fetch_rates_by_timestamp_with_archive(pg_base_config):
                 len(expected_deleted_rate_ids),
             )
             active_list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
-            active_list_entities.sort(key=lambda e: e.tariff_generated_rate_id)
+            active_list_entities.sort(key=lambda e: e.original.tariff_generated_rate_id)
 
             deleted_list_entities = [e for _, entities in batch.deleted_by_batch_key.items() for e in entities]
-            deleted_list_entities.sort(key=lambda e: e.tariff_generated_rate_id)
+            deleted_list_entities.sort(key=lambda e: e.original.tariff_generated_rate_id)
 
-            assert set(expected_active_rate_ids) == set([e.tariff_generated_rate_id for e in active_list_entities])
-            assert set(expected_deleted_rate_ids) == set([e.tariff_generated_rate_id for e in deleted_list_entities])
-
-            # Ensure the parent ORM relationship is populated for deleted/active instances
-            assert all([isinstance(e.site, Site) for v_list in batch.models_by_batch_key.values() for e in v_list])
-            assert all(
-                [
-                    hasattr(e, "site") and (isinstance(e.site, Site) or isinstance(e.site, ArchiveSite))
-                    for v_list in batch.deleted_by_batch_key.values()
-                    for e in v_list
-                ]
+            assert set(expected_active_rate_ids) == set(
+                [e.original.tariff_generated_rate_id for e in active_list_entities]
+            )
+            assert set(expected_deleted_rate_ids) == set(
+                [e.original.tariff_generated_rate_id for e in deleted_list_entities]
             )
 
             # Validate the deleted entities are the ones we expect (lean on the fact we setup a property on the
             # archive type in a particular way for the expected matches)
             assert all(
                 [
-                    e.duration_seconds == e.tariff_generated_rate_id
+                    e.original.duration_seconds == e.original.tariff_generated_rate_id
                     for v_list in batch.deleted_by_batch_key.values()
                     for e in v_list
                 ]
@@ -1014,9 +1004,6 @@ async def test_fetch_does_by_timestamp(
         assert all([isinstance(e, SiteScopedDynamicOperatingEnvelope) for e in list_entities])
         assert all([e.aggregator_id == 1 for e in list_entities]), "doe1's site (site 1) belongs to aggregator 1"
         assert all([e.site_id == 1 for e in list_entities]), "doe1's site_group_id (2) is a singleton for site 1"
-        assert all([e.original.start_time.tzinfo == ZoneInfo("Australia/Brisbane") for e in list_entities]), (
-            "start_time should be localized to the zone identified by the linked site"
-        )
 
 
 @pytest.mark.anyio

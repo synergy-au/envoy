@@ -36,3 +36,5 @@ async def fetch_site_group_membership(
         site_exists_result = (await session.execute(select(site_exists_stmt))).scalar_one_or_none()
         if not site_exists_result:
             return None
+
+    return result

@@ -374,7 +374,8 @@ async def test_select_tariff_generated_rate_include_deleted(
         # No groups matched - return nothing
         ([], 0, 1, None, set(), BASE, 0, datetime.min, 99),
         # All groups - ANY TC
-        ([7, 6, 5, 4, 1, 2, 3, 8, 9], 9, 1, None, {1, 2, 3, 4, 5, 99}, BASE, 0, datetime.min, 99),
+        ([6, 5, 4, 1, 2, 3, 8, 9], 8, 1, None, {1, 2, 3, 4, 5, 99}, BASE, 0, datetime.min, 99),
+        ([7], 1, 2, None, {1, 2, 3, 4, 5, 99}, BASE, 0, datetime.min, 99),
         # Site #1 - ANY TC
         ([6, 1, 2, 3, 8, 9], 6, 1, None, {1, 2}, BASE, 0, datetime.min, 99),
         ([6, 1, 2, 3, 8, 9], 6, 1, None, {1, 2}, BASE, 0, None, 99),

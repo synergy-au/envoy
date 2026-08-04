@@ -425,5 +425,5 @@ async def test_set_site_group_assignments_does_not_affect_other_sites(pg_base_co
 
     async with generate_async_session(pg_base_config) as session:
         assert await _get_group_ids_for_site(session, 1) == [3]
-        assert await _get_group_ids_for_site(session, 2) == [1]  # unchanged
-        assert await _get_group_ids_for_site(session, 3) == [1]  # unchanged
+        assert await _get_group_ids_for_site(session, 2) == [1, 4]  # unchanged
+        assert await _get_group_ids_for_site(session, 3) == [1, 5]  # unchanged

@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from http import HTTPStatus
 
 from asyncpg.exceptions import CardinalityViolationError
@@ -7,7 +6,6 @@ from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
-    TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
     TariffRequest,
@@ -19,11 +17,10 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentUpdateUri,
     TariffCreateUri,
     TariffGeneratedRateCreateUri,
-    TariffGeneratedRateRangeUri,
     TariffGeneratedRateUpdateUri,
     TariffUpdateUri,
 )
-from fastapi import APIRouter, Path, Query, Response
+from fastapi import APIRouter, Query, Response
 from fastapi_async_sqlalchemy import db
 from sqlalchemy.exc import IntegrityError, NoResultFound
 
@@ -33,10 +30,6 @@ from envoy.admin.manager.pricing import (
     TariffManager,
 )
 from envoy.server.api.error_handler import LoggedHttpException
-from envoy.server.api.request import (
-    extract_limit_from_paging_param,
-    extract_start_from_paging_param,
-)
 
 logger = logging.getLogger(__name__)
 

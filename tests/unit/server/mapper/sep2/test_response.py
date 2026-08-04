@@ -95,7 +95,7 @@ def test_ResponseMapper_map_from_price_request(optional_is_none: bool, response_
     assert isinstance(result, TariffGeneratedRateResponse)
     assert result.tariff_generated_rate_response_id is None, "Assigned by the database"
     assert result.created_time is None, "Assigned by the database"
-    assert result.site_id == tariff_generated_rate.site_id
+    assert result.site_id == site_id
     assert result.tariff_generated_rate_id_snapshot == tariff_generated_rate.tariff_generated_rate_id
 
 

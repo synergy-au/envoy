@@ -15,6 +15,7 @@ from envoy.server.request_scope import SiteRequestScope
 
 @pytest.mark.parametrize("fsa_id, n_tariffs", list(product([333, None], [0, 1, 2])))
 @pytest.mark.anyio
+@mock.patch("envoy.server.manager.pricing.fetch_site_group_membership")
 @mock.patch("envoy.server.manager.pricing.TariffProfileMapper.map_to_list_response")
 @mock.patch("envoy.server.manager.pricing.select_all_tariffs")
 @mock.patch("envoy.server.manager.pricing.select_tariff_count")
@@ -28,6 +29,7 @@ async def test_fetch_tariff_profile_list_counts_members(
     mock_select_tariff_count: mock.MagicMock,
     mock_select_all_tariffs: mock.MagicMock,
     mock_map_to_list_response: mock.MagicMock,
+    mock_fetch_site_group_membership: mock.MagicMock,
     fsa_id: int | None,
     n_tariffs: int,
 ):
@@ -40,6 +42,7 @@ async def test_fetch_tariff_profile_list_counts_members(
     limit = 222
     tariff_count = 33
     server_config = generate_class_instance(RuntimeServerConfig)
+    site_group_ids = {33, 44}
 
     all_tariffs = [generate_class_instance(Tariff, seed=i, tariff_id=i) for i in range(n_tariffs)]
     count_components = [i for i in range(n_tariffs)]
@@ -55,6 +58,7 @@ async def test_fetch_tariff_profile_list_counts_members(
     mock_count_tariff_components_by_tariff.side_effect = count_components
     mock_map_to_list_response.return_value = mapped_tariffs
     mock_fetch_current_config.return_value = server_config
+    mock_fetch_site_group_membership.return_value = site_group_ids
 
     # Act
     response = await TariffProfileManager.fetch_tariff_profile_list(mock_session, scope, start, changed, limit, fsa_id)
@@ -81,6 +85,7 @@ async def test_fetch_tariff_profile_list_counts_members(
 
 @pytest.mark.parametrize("n_rates", [0, 1, 2])
 @pytest.mark.anyio
+@mock.patch("envoy.server.manager.pricing.fetch_site_group_membership")
 @mock.patch("envoy.server.manager.pricing.RateComponentMapper.map_to_list_response")
 @mock.patch("envoy.server.manager.pricing.select_tariff_components_by_tariff")
 @mock.patch("envoy.server.manager.pricing.count_tariff_components_by_tariff")
@@ -90,6 +95,7 @@ async def test_fetch_rate_component_list_counts_members(
     mock_count_tariff_components_by_tariff: mock.MagicMock,
     mock_select_tariff_components_by_tariff: mock.MagicMock,
     mock_map_to_list_response: mock.MagicMock,
+    mock_fetch_site_group_membership: mock.MagicMock,
     n_rates: int,
 ):
     """Tests that the function correctly interrogates the counts for each list item returned and correctly passes
@@ -101,6 +107,7 @@ async def test_fetch_rate_component_list_counts_members(
     limit = 8
     scope: SiteRequestScope = generate_class_instance(SiteRequestScope, seed=1001)
     mapped_list = generate_class_instance(RateComponentListResponse)
+    site_group_ids = {33, 44}
 
     count_components = 141
     all_components = [
@@ -113,6 +120,7 @@ async def test_fetch_rate_component_list_counts_members(
     mock_count_tariff_components_by_tariff.return_value = count_components
     mock_count_active_rates_include_deleted.side_effect = count_rates
     mock_map_to_list_response.return_value = mapped_list
+    mock_fetch_site_group_membership.return_value = site_group_ids
 
     list_response = await RateComponentManager.fetch_rate_component_list(
         mock_session, scope, tariff_id, start, changed_after, limit
