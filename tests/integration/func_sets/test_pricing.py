@@ -76,10 +76,13 @@ async def test_get_tariff_profile_list_poll_rate(
         (1, 1, 1, 1, None, [("/edev/1/tp/1", 3, 4)]),
         # changing site id
         (2, 1, 0, 99, None, [("/edev/2/tp/2", 1, 0), ("/edev/2/tp/1", 3, 1)]),
-        (3, 1, 0, 99, None, [("/edev/3/tp/2", 1, 0), ("/edev/3/tp/1", 3, 1)]),
+        (4, 1, 0, 99, None, [("/edev/4/tp/2", 1, 0), ("/edev/4/tp/1", 3, 0)]),
         # changing fsa id
         (1, 2, 0, 99, None, [("/edev/1/tp/3", 0, 0)]),
         (1, 3, 0, 99, None, []),
+        # errors
+        (3, 1, 0, 99, None, None),  # Not part of agg 1
+        (99, 1, 0, 99, None, None),  # site DNE
     ],
 )
 @freeze_time("2010-01-01")  # Prices are time sensitive - set time far enough in the past to ensure all pass
@@ -91,7 +94,7 @@ async def test_get_tariffprofilelist(
     start: int | None,
     limit: int | None,
     changed_after: datetime | None,
-    expected_tariffs_with_count: list[tuple[str, int, int]],
+    expected_tariffs_with_count: list[tuple[str, int, int]] | None,
 ):
     """Tests that the list pagination works correctly on the site scoped tariff profile list
 
@@ -100,28 +103,39 @@ async def test_get_tariffprofilelist(
         start, limit, changed_after
     )
     response = await client.get(path, headers=agg_1_headers)
-    assert_response_header(response, HTTPStatus.OK)
-    body = read_response_body_string(response)
-    assert len(body) > 0
 
-    parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
-    assert parsed_response
-    assert parsed_response.href == uri.TariffProfileFSAListUri.format(site_id=site_id, fsa_id=fsa_id)
-    assert parsed_response.results == len(expected_tariffs_with_count)
+    if expected_tariffs_with_count is None:
+        assert_response_header(response, HTTPStatus.NOT_FOUND)
+        assert_error_response(response)
+    else:
+        assert_response_header(response, HTTPStatus.OK)
+        body = read_response_body_string(response)
+        assert len(body) > 0
 
-    if parsed_response.TariffProfile is None:
-        parsed_response.TariffProfile = []
-    assert len(parsed_response.TariffProfile) == len(expected_tariffs_with_count)
+        parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
+        assert parsed_response
+        assert parsed_response.href == uri.TariffProfileFSAListUri.format(site_id=site_id, fsa_id=fsa_id)
+        assert parsed_response.results == len(expected_tariffs_with_count)
 
-    # Check that the rate counts and referenced rate component counts match our expectations
-    expected_tariffs = [href for (href, _, _) in expected_tariffs_with_count]
-    expected_component_counts = [rate_component_count for (_, rate_component_count, _) in expected_tariffs_with_count]
-    expected_ctti_counts = [combined_tti_count for (_, _, combined_tti_count) in expected_tariffs_with_count]
-    assert expected_tariffs == [tp.href for tp in parsed_response.TariffProfile]
-    assert expected_component_counts == [
-        tp.RateComponentListLink.all_ for tp in parsed_response.TariffProfile if tp.RateComponentListLink is not None
-    ]
-    assert expected_ctti_counts == [tp.CombinedTimeTariffIntervalListLink.all_ for tp in parsed_response.TariffProfile]
+        if parsed_response.TariffProfile is None:
+            parsed_response.TariffProfile = []
+        assert len(parsed_response.TariffProfile) == len(expected_tariffs_with_count)
+
+        # Check that the rate counts and referenced rate component counts match our expectations
+        expected_tariffs = [href for (href, _, _) in expected_tariffs_with_count]
+        expected_component_counts = [
+            rate_component_count for (_, rate_component_count, _) in expected_tariffs_with_count
+        ]
+        expected_ctti_counts = [combined_tti_count for (_, _, combined_tti_count) in expected_tariffs_with_count]
+        assert expected_tariffs == [tp.href for tp in parsed_response.TariffProfile]
+        assert expected_component_counts == [
+            tp.RateComponentListLink.all_
+            for tp in parsed_response.TariffProfile
+            if tp.RateComponentListLink is not None
+        ]
+        assert expected_ctti_counts == [
+            tp.CombinedTimeTariffIntervalListLink.all_ for tp in parsed_response.TariffProfile
+        ]
 
 
 @pytest.mark.anyio

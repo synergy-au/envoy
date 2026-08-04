@@ -1,5 +1,4 @@
 from datetime import UTC, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 import pytest
 from assertical.asserts.type import assert_list_type
@@ -17,13 +16,16 @@ from envoy.server.crud.pricing import (
     select_tariff_fsa_ids,
     select_tariff_generated_rate_include_deleted,
 )
-from envoy.server.crud.site import select_single_site_with_site_id
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 
 AEST = timezone(timedelta(hours=10))
 UTC = UTC
 BASE = datetime(2000, 1, 1, tzinfo=UTC)  # Convenience - used a lot for initial creation times
+
+# TariffGeneratedRate now targets a SiteGroup rather than a single Site. base_config.sql sets up a singleton
+# SiteGroup per legacy site_id so every existing test fixture rate still targets exactly one site, matching this map.
+SITE_ID_TO_SINGLETON_GROUP_ID = {1: 2, 2: 4, 3: 5}
 
 
 @pytest.mark.parametrize(
@@ -280,56 +282,56 @@ def assert_rate_for_id(
             case 1:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 2:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 11, tzinfo=AEST)
             case 3:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id == 2
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 33, tzinfo=AEST)
             case 4:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 2
+                assert actual_rate.site_group_id == 4
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 5:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 3
+                assert actual_rate.site_group_id == 5
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 6:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 2
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 7:
                 assert actual_rate.tariff_id == 2
                 assert actual_rate.tariff_component_id == 4
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 0, 0, tzinfo=AEST)
             case 8:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 1, 6, tzinfo=AEST)
                 assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 30, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
             case 9:
                 assert actual_rate.tariff_id == 1
                 assert actual_rate.tariff_component_id == 1
-                assert actual_rate.site_id == 1
+                assert actual_rate.site_group_id == 2
                 assert actual_rate.calculation_log_id is None
                 assert actual_rate.start_time == datetime(2022, 3, 5, 1, 2, 34, tzinfo=AEST)
                 assert actual_rate.deleted_time == datetime(2022, 3, 5, 1, 35, 0, tzinfo=UTC)  # ty:ignore[unresolved-attribute]
@@ -341,15 +343,10 @@ def assert_rate_for_id(
     "agg_id, site_id, rate_id, expected_rate_id",
     [
         (1, 1, 1, 1),
-        (1, None, 1, 1),
         (1, 1, 3, 3),
-        (1, None, 3, 3),
         (2, 3, 5, 5),
-        (2, None, 5, 5),
         (1, 1, 8, 8),  # Archive
-        (1, None, 8, 8),  # Archive
         (1, 1, 9, 9),  # Archive
-        (1, None, 9, 9),  # Archive
         (1, 1, 99, None),  # Bad Rate ID
         (2, 1, 1, None),  # Bad Agg ID
         (99, 1, 1, None),  # Bad Agg ID
@@ -363,7 +360,7 @@ def assert_rate_for_id(
 )
 @pytest.mark.anyio
 async def test_select_tariff_generated_rate_include_deleted(
-    pg_additional_prices, agg_id: int, site_id: int | None, rate_id: int, expected_rate_id: int | None
+    pg_additional_prices, agg_id: int, site_id: int, rate_id: int, expected_rate_id: int | None
 ):
 
     async with generate_async_session(pg_additional_prices) as session:
@@ -372,57 +369,42 @@ async def test_select_tariff_generated_rate_include_deleted(
 
 
 @pytest.mark.parametrize(
-    "agg_id, site_id, rate_id",
+    "expected_ids, expected_count, tariff_id, tariff_component_id, site_group_ids, now, start, changed_after, limit",
     [
-        (1, 1, 1),
-        (1, None, 1),
-        (1, 1, 8),
-        (1, None, 8),
-    ],
-)
-@pytest.mark.anyio
-async def test_select_tariff_generated_rate_for_scope_la_timezone(
-    pg_la_timezone, pg_additional_prices, agg_id: int, site_id: int | None, rate_id: int
-):
-    async with generate_async_session(pg_la_timezone) as session:
-        actual = await select_tariff_generated_rate_include_deleted(session, agg_id, site_id, rate_id)
-        assert_rate_for_id(expected_rate_id=rate_id, actual_rate=actual)
-        if actual is not None:
-            assert actual.start_time.tzinfo == ZoneInfo("America/Los_Angeles")
-
-
-@pytest.mark.parametrize(
-    "expected_ids, expected_count, tariff_id, tariff_component_id, site_id, now, start, changed_after, limit",
-    [
+        # No groups matched - return nothing
+        ([], 0, 1, None, set(), BASE, 0, datetime.min, 99),
+        # All groups - ANY TC
+        ([6, 5, 4, 1, 2, 3, 8, 9], 8, 1, None, {1, 2, 3, 4, 5, 99}, BASE, 0, datetime.min, 99),
+        ([7], 1, 2, None, {1, 2, 3, 4, 5, 99}, BASE, 0, datetime.min, 99),
         # Site #1 - ANY TC
-        ([6, 1, 2, 3, 8, 9], 6, 1, None, 1, BASE, 0, datetime.min, 99),
-        ([6, 1, 2, 3, 8, 9], 6, 1, None, 1, BASE, 0, None, 99),
+        ([6, 1, 2, 3, 8, 9], 6, 1, None, {1, 2}, BASE, 0, datetime.min, 99),
+        ([6, 1, 2, 3, 8, 9], 6, 1, None, {1, 2}, BASE, 0, None, 99),
         # Site #1 - TC #1
-        ([1, 2, 3, 8, 9], 5, 1, 1, 1, BASE, 0, datetime.min, 99),
+        ([1, 2, 3, 8, 9], 5, 1, 1, {1, 2}, BASE, 0, datetime.min, 99),
         # Site #1 - TC #2
-        ([6], 1, 1, 2, 1, BASE, 0, datetime.min, 99),
-        ([6], 1, 1, 2, 1, BASE, 0, None, 99),
+        ([6], 1, 1, 2, {1, 2}, BASE, 0, datetime.min, 99),
+        ([6], 1, 1, 2, {1, 2}, BASE, 0, None, 99),
         # Site #1 - TC #3
-        ([], 0, 1, 3, 1, BASE, 0, datetime.min, 99),
+        ([], 0, 1, 3, {1, 2}, BASE, 0, datetime.min, 99),
         # Site #1 - TC #DNE
-        ([], 0, 1, 99, 1, BASE, 0, datetime.min, 99),
+        ([], 0, 1, 99, {1, 2}, BASE, 0, datetime.min, 99),
         # Tariff #2 Site #1 - ANY TC
-        ([7], 1, 2, None, 1, BASE, 0, datetime.min, 99),
+        ([7], 1, 2, None, {1, 2}, BASE, 0, datetime.min, 99),
         # Tariff #3 Site #1 - ANY TC
-        ([], 0, 3, None, 1, BASE, 0, datetime.min, 99),
+        ([], 0, 3, None, {1, 2}, BASE, 0, datetime.min, 99),
         # Tariff #DNE Site #1 - ANY TC
-        ([], 0, 99, None, 1, BASE, 0, datetime.min, 99),
+        ([], 0, 99, None, {1, 2}, BASE, 0, datetime.min, 99),
         # Adjusting "now" to exclude expired items (will exclude #1 / #2)
-        ([6, 3, 8, 9], 4, 1, None, 1, datetime(2022, 3, 5, 1, 0, 35, tzinfo=AEST), 0, datetime.min, 99),
+        ([6, 3, 8, 9], 4, 1, None, {1, 2}, datetime(2022, 3, 5, 1, 0, 35, tzinfo=AEST), 0, datetime.min, 99),
         # Adjusting "now" to exclude most items (will exclude everything but #9)
-        ([9], 1, 1, None, 1, datetime(2022, 3, 5, 1, 2, 35, tzinfo=AEST), 0, datetime.min, 99),
+        ([9], 1, 1, None, {1, 2}, datetime(2022, 3, 5, 1, 2, 35, tzinfo=AEST), 0, datetime.min, 99),
         # Adjusting "now" to exclude all items
-        ([], 0, 1, None, 1, datetime(2025, 1, 1, 1, 1, 1, tzinfo=AEST), 0, datetime.min, 99),
+        ([], 0, 1, None, {1, 2}, datetime(2025, 1, 1, 1, 1, 1, tzinfo=AEST), 0, datetime.min, 99),
         # Adjusting changed time filter to exclude items (noting archives filter on deleted_time, not changed_time)
-        ([6, 1, 2, 3, 8, 9], 6, 1, None, 1, BASE, 0, BASE, 99),
-        ([6, 3, 8, 9], 4, 1, None, 1, BASE, 0, datetime(2022, 3, 4, 13, 22, 33, tzinfo=UTC), 99),
-        ([9], 1, 1, None, 1, BASE, 0, datetime(2022, 3, 5, 1, 31, 0, tzinfo=UTC), 99),
-        ([], 0, 1, None, 1, BASE, 0, datetime(2022, 3, 5, 20, 22, 33, tzinfo=UTC), 99),
+        ([6, 1, 2, 3, 8, 9], 6, 1, None, {1, 2}, BASE, 0, BASE, 99),
+        ([6, 3, 8, 9], 4, 1, None, {1, 2}, BASE, 0, datetime(2022, 3, 4, 13, 22, 33, tzinfo=UTC), 99),
+        ([9], 1, 1, None, {1, 2}, BASE, 0, datetime(2022, 3, 5, 1, 31, 0, tzinfo=UTC), 99),
+        ([], 0, 1, None, {1, 2}, BASE, 0, datetime(2022, 3, 5, 20, 22, 33, tzinfo=UTC), 99),
     ],
 )
 @pytest.mark.anyio
@@ -432,7 +414,7 @@ async def test_select_and_count_active_rates_include_deleted(
     expected_count: int,
     tariff_id: int,
     tariff_component_id: int | None,
-    site_id: int,
+    site_group_ids: set[int],
     now: datetime,
     start: int,
     changed_after: datetime | None,
@@ -442,15 +424,12 @@ async def test_select_and_count_active_rates_include_deleted(
     and pagination correctly."""
 
     async with generate_async_session(pg_additional_prices) as session:
-        existing_site = await select_single_site_with_site_id(session, 1, site_id)
-        assert existing_site is not None, "This is a test definition issue if failing"
-
         # Check the rates
         actual_rates = await select_active_rates_include_deleted(
             session,
             tariff_id=tariff_id,
             tariff_component_id=tariff_component_id,
-            site=existing_site,
+            site_group_ids=site_group_ids,
             now=now,
             start=start,
             changed_after=changed_after,
@@ -467,7 +446,7 @@ async def test_select_and_count_active_rates_include_deleted(
             session,
             tariff_id=tariff_id,
             tariff_component_id=tariff_component_id,
-            site_id=site_id,
+            site_group_ids=site_group_ids,
             now=now,
             changed_after=changed_after,
         )

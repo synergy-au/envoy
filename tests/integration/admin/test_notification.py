@@ -56,10 +56,10 @@ async def test_create_site_controls_no_active_subscription(
         await session.commit()
 
     site_control_request_1 = generate_class_instance(SiteControlRequest)
-    site_control_request_1.site_id = 1
+    site_control_request_1.site_group_id = 2
 
     site_control_request_2 = generate_class_instance(SiteControlRequest, seed=123, optional_is_none=True)
-    site_control_request_2.site_id = 2
+    site_control_request_2.site_group_id = 4
 
     resp = await admin_client_auth.post(
         uri, content=f"[{site_control_request_1.model_dump_json()}, {site_control_request_2.model_dump_json()}]"
@@ -115,10 +115,10 @@ async def test_create_site_controls_with_active_subscription(
 
         await session.commit()
 
-    control_1 = generate_class_instance(SiteControlRequest, seed=10001, site_id=1, calculation_log_id=None)
-    control_2 = generate_class_instance(SiteControlRequest, seed=20002, site_id=1, calculation_log_id=1)
-    control_3 = generate_class_instance(SiteControlRequest, seed=30003, site_id=2, calculation_log_id=1)
-    control_4 = generate_class_instance(SiteControlRequest, seed=40004, site_id=3, calculation_log_id=None)
+    control_1 = generate_class_instance(SiteControlRequest, seed=10001, site_group_id=2, calculation_log_id=None)
+    control_2 = generate_class_instance(SiteControlRequest, seed=20002, site_group_id=2, calculation_log_id=1)
+    control_3 = generate_class_instance(SiteControlRequest, seed=30003, site_group_id=4, calculation_log_id=1)
+    control_4 = generate_class_instance(SiteControlRequest, seed=40004, site_group_id=5, calculation_log_id=None)
 
     content = ",".join([d.model_dump_json() for d in [control_1, control_2, control_3, control_4]])
     resp = await admin_client_auth.post(
@@ -231,7 +231,7 @@ async def test_supersede_site_control_with_active_subscription(
     control_1 = generate_class_instance(
         SiteControlRequest,
         seed=10001,
-        site_id=1,
+        site_group_id=2,
         calculation_log_id=None,
         start_time=datetime(2022, 5, 7, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         export_limit_watts=100,
@@ -306,10 +306,10 @@ async def test_create_does_with_paginated_notifications(
 
         await session.commit()
 
-    control_1 = generate_class_instance(SiteControlRequest, seed=101, site_id=1, calculation_log_id=None)
-    control_2 = generate_class_instance(SiteControlRequest, seed=202, site_id=1, calculation_log_id=None)
-    control_3 = generate_class_instance(SiteControlRequest, seed=303, site_id=1, calculation_log_id=None)
-    control_4 = generate_class_instance(SiteControlRequest, seed=404, site_id=3, calculation_log_id=None)
+    control_1 = generate_class_instance(SiteControlRequest, seed=101, site_group_id=2, calculation_log_id=None)
+    control_2 = generate_class_instance(SiteControlRequest, seed=202, site_group_id=2, calculation_log_id=None)
+    control_3 = generate_class_instance(SiteControlRequest, seed=303, site_group_id=2, calculation_log_id=None)
+    control_4 = generate_class_instance(SiteControlRequest, seed=404, site_group_id=5, calculation_log_id=None)
 
     content = ",".join([d.model_dump_json() for d in [control_1, control_2, control_3, control_4]])
     resp = await admin_client_auth.post(
@@ -1052,7 +1052,7 @@ async def test_create_rates_with_active_subscription(
     rate_1 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=101,
-        site_id=1,
+        site_group_id=2,  # Group-2, site1's singleton group per base_config.sql
         tariff_component_id=1,
         start_time=datetime(2022, 3, 4, 14, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=1,
@@ -1062,7 +1062,7 @@ async def test_create_rates_with_active_subscription(
     rate_2 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=202,
-        site_id=3,
+        site_group_id=5,
         tariff_component_id=1,
         start_time=datetime(2022, 3, 4, 14, 5, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=None,
@@ -1072,7 +1072,7 @@ async def test_create_rates_with_active_subscription(
     rate_3 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=303,
-        site_id=1,
+        site_group_id=2,  # Group-2, site1's singleton group per base_config.sql
         tariff_component_id=4,
         start_time=datetime(2022, 3, 4, 14, 10, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=None,

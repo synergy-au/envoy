@@ -6,11 +6,10 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from envoy.server.crud.common import localize_start_time, localize_start_time_for_entity
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope as ArchiveDOE
 from envoy.server.model.doe import DynamicOperatingEnvelope as DOE
 from envoy.server.model.doe import SiteControlGroup
-from envoy.server.model.site import Site
 
 
 async def select_doe_include_deleted(
@@ -22,40 +21,35 @@ async def select_doe_include_deleted(
     """Attempts to fetch a doe using its' DOE id, also scoping it to a particular aggregator/site. The archive
     table will also be checked for deleted instances (of which the most recent deletion will be matched).
 
-    site_control_group_id: The SiteControlGroup to select doe's from
     aggregator_id: The aggregator id to constrain the lookup to
-    site_id: the query will apply a filter on site_id using this value"""
+    site_id: the query will apply a filter on site_id using this value (based on group membership)"""
 
-    # Start by confirming the referenced site_id exists within the specified aggregator.
-    site_timezone_id = (
-        await session.execute(
-            select(Site.timezone_id).where((Site.site_id == site_id) & (Site.aggregator_id == aggregator_id))
-        )
-    ).scalar_one_or_none()
-    if not site_timezone_id:
+    site_group_ids = await fetch_site_group_membership(session, aggregator_id=aggregator_id, site_id=site_id)
+    if not site_group_ids:
         return None
 
     # Check primary table first
     primary_table_doe = (
         await session.execute(
-            select(DOE).where((DOE.dynamic_operating_envelope_id == doe_id) & (DOE.site_id == site_id))
+            select(DOE).where((DOE.dynamic_operating_envelope_id == doe_id) & (DOE.site_group_id.in_(site_group_ids)))
         )
     ).scalar_one_or_none()
     if primary_table_doe is not None:
-        return localize_start_time_for_entity(primary_table_doe, site_timezone_id)
+        return primary_table_doe
 
     # Check archive otherwise
     archive_table_doe = (
         await session.execute(
             select(ArchiveDOE)
-            .where((ArchiveDOE.dynamic_operating_envelope_id == doe_id) & (ArchiveDOE.deleted_time.is_not(None)))
+            .where(
+                (ArchiveDOE.dynamic_operating_envelope_id == doe_id)
+                & (ArchiveDOE.deleted_time.is_not(None))
+                & (ArchiveDOE.site_group_id.in_(site_group_ids))
+            )
             .order_by(ArchiveDOE.deleted_time.desc())
         )
     ).scalar_one_or_none()
-    if archive_table_doe is not None:
-        return localize_start_time_for_entity(archive_table_doe, site_timezone_id)
-
-    return None
+    return archive_table_doe
 
 
 async def select_doe_by_display_id_include_deleted(
@@ -67,51 +61,42 @@ async def select_doe_by_display_id_include_deleted(
     """Attempts to fetch a doe using its' display id, also scoping it to a particular aggregator/site. The archive
     table will also be checked for deleted instances (of which the most recent deletion will be matched).
 
-    site_control_group_id: The SiteControlGroup to select doe's from
     aggregator_id: The aggregator id to constrain the lookup to
     site_id: the query will apply a filter on site_id using this value"""
 
-    # Start by confirming the referenced site_id exists within the specified aggregator.
-    site_timezone_id = (
-        await session.execute(
-            select(Site.timezone_id).where((Site.site_id == site_id) & (Site.aggregator_id == aggregator_id))
-        )
-    ).scalar_one_or_none()
-    if not site_timezone_id:
+    site_group_ids = await fetch_site_group_membership(session, aggregator_id=aggregator_id, site_id=site_id)
+    if not site_group_ids:
         return None
 
     # Check primary table first
     primary_table_doe = (
-        await session.execute(select(DOE).where((DOE.display_id == display_id) & (DOE.site_id == site_id)))
+        await session.execute(
+            select(DOE).where((DOE.display_id == display_id) & (DOE.site_group_id.in_(site_group_ids)))
+        )
     ).scalar_one_or_none()
     if primary_table_doe is not None:
-        return localize_start_time_for_entity(primary_table_doe, site_timezone_id)
+        return primary_table_doe
 
     # Check archive otherwise
-    archive_table_doe = (
+    return (
         await session.execute(
             select(ArchiveDOE)
             .where(
                 (ArchiveDOE.display_id == display_id)
-                & (ArchiveDOE.site_id == site_id)
                 & (ArchiveDOE.deleted_time.is_not(None))
+                & (ArchiveDOE.site_group_id.in_(site_group_ids))
             )
             .order_by(ArchiveDOE.deleted_time.desc())
             .limit(1)
         )
     ).scalar_one_or_none()
-    if archive_table_doe is not None:
-        return localize_start_time_for_entity(archive_table_doe, site_timezone_id)
-
-    return None
 
 
 async def _does_at_timestamp(
     is_counting: bool,
     session: AsyncSession,
     site_control_group_id: int,
-    aggregator_id: int,
-    site_id: int | None,
+    site_group_ids: set[int],
     timestamp: datetime,
     start: int,
     changed_after: datetime,
@@ -121,23 +106,22 @@ async def _does_at_timestamp(
 
     aggregator_id: The aggregator to scope all DOEs to
     site_control_group_id: The SiteControlGroup to select doe's from
-    site_id: If None - no site_id filter applied, otherwise filter on site_id = Value
+    site_group_ids: returned records must have a site_group_id in this set
 
     Orders by 2030.5 requirements on DERControl which is start ASC, creation DESC, id DESC"""
 
-    select_clause: Select[tuple[int]] | Select[tuple[DOE, str]]
+    select_clause: Select[tuple[int]] | Select[tuple[DOE]]
     if is_counting:
         select_clause = select(func.count()).select_from(DOE)
     else:
-        select_clause = select(DOE, Site.timezone_id)
+        select_clause = select(DOE)
 
     stmt = (
-        select_clause.join(DOE.site)
-        .where(
+        select_clause.where(
             (DOE.site_control_group_id == site_control_group_id)
             & (DOE.end_time > timestamp)
             & (DOE.start_time <= timestamp)
-            & (Site.aggregator_id == aggregator_id)
+            & (DOE.site_group_id.in_(site_group_ids))
         )
         .offset(start)
         .limit(limit)
@@ -146,9 +130,6 @@ async def _does_at_timestamp(
     if changed_after != datetime.min:
         stmt = stmt.where(DOE.changed_time >= changed_after)
 
-    if site_id is not None:
-        stmt = stmt.where(DOE.site_id == site_id)
-
     if not is_counting:
         stmt = stmt.order_by(DOE.start_time.asc(), DOE.changed_time.desc(), DOE.dynamic_operating_envelope_id.desc())
 
@@ -156,20 +137,20 @@ async def _does_at_timestamp(
     if is_counting:
         return resp.scalar_one()
     else:
-        return [localize_start_time(doe_and_tz) for doe_and_tz in resp.all()]
+        return resp.scalars().all()
 
 
 async def count_active_does_include_deleted(
     session: AsyncSession,
     site_control_group_id: int,
-    site: Site,
+    site_group_ids: set[int],
     now: datetime,
     changed_after: datetime,
 ) -> int:
     """Provides the count of records returned from select_active_does_include_deleted (assuming no pagination).
 
     site_control_group_id: The SiteControlGroup to select doe's from
-    site: The site that the counted DOE's will be all be scoped from
+    site_group_ids: The site group ids that the counted DOE's will be all be scoped from
     now: The timestamp that excludes any DOE whose end_time precedes this (i.e. they are expired and no longer relevant)
     changed_after: Only DOE's modified after this time will be counted."""
 
@@ -177,7 +158,9 @@ async def count_active_does_include_deleted(
         select(func.count())
         .select_from(DOE)
         .where(
-            (DOE.site_control_group_id == site_control_group_id) & (DOE.end_time > now) & (DOE.site_id == site.site_id)
+            (DOE.site_control_group_id == site_control_group_id)
+            & (DOE.end_time > now)
+            & (DOE.site_group_id.in_(site_group_ids))
         )
     )
     count_archive_does_stmt = (
@@ -186,7 +169,7 @@ async def count_active_does_include_deleted(
         .where(
             (ArchiveDOE.site_control_group_id == site_control_group_id)
             & (ArchiveDOE.end_time > now)
-            & (ArchiveDOE.site_id == site.site_id)
+            & (ArchiveDOE.site_group_id.in_(site_group_ids))
             & (ArchiveDOE.deleted_time.is_not(None))
         )
     )
@@ -205,7 +188,7 @@ async def count_active_does_include_deleted(
 async def select_active_does_include_deleted(
     session: AsyncSession,
     site_control_group_id: int,
-    site: Site,
+    site_group_ids: set[int],
     now: datetime,
     start: int,
     changed_after: datetime,
@@ -215,7 +198,7 @@ async def select_active_does_include_deleted(
     DOE's whose end_time is after "now" will be returned.
 
     site_control_group_id: The SiteControlGroup to select doe's from
-    site: Only DOEs from this site will be included
+    site_group_ids: Only DOEs from these site groups will be included
     now: The timestamp that excludes any DOE whose end_time precedes this (i.e. they are expired and no longer relevant)
     start: How many DOEs to skip
     limit: Max number of DOEs to return
@@ -226,7 +209,7 @@ async def select_active_does_include_deleted(
     select_active_does = select(
         DOE.dynamic_operating_envelope_id,
         DOE.site_control_group_id,
-        DOE.site_id,
+        DOE.site_group_id,
         DOE.calculation_log_id,
         DOE.created_time,
         DOE.changed_time,
@@ -249,12 +232,16 @@ async def select_active_does_include_deleted(
         literal_column("NULL").label("archive_time"),
         literal_column("NULL").label("deleted_time"),
         literal_column("0").label("is_archive"),
-    ).where((DOE.site_control_group_id == site_control_group_id) & (DOE.end_time > now) & (DOE.site_id == site.site_id))
+    ).where(
+        (DOE.site_control_group_id == site_control_group_id)
+        & (DOE.end_time > now)
+        & (DOE.site_group_id.in_(site_group_ids))
+    )
 
     select_archive_does = select(
         ArchiveDOE.dynamic_operating_envelope_id,
         ArchiveDOE.site_control_group_id,
-        ArchiveDOE.site_id,
+        ArchiveDOE.site_group_id,
         ArchiveDOE.calculation_log_id,
         ArchiveDOE.created_time,
         ArchiveDOE.deleted_time.label(ArchiveDOE.changed_time.name),  # Changed time will be using "deleted_time"
@@ -280,7 +267,7 @@ async def select_active_does_include_deleted(
     ).where(
         (ArchiveDOE.site_control_group_id == site_control_group_id)
         & (ArchiveDOE.end_time > now)
-        & (ArchiveDOE.site_id == site.site_id)
+        & (ArchiveDOE.site_group_id.in_(site_group_ids))
         & (ArchiveDOE.deleted_time.is_not(None))
     )
 
@@ -302,61 +289,55 @@ async def select_active_does_include_deleted(
     # We use the literal "is_archive" from our query to differentiate archive from normal rows
     return [
         (
-            localize_start_time_for_entity(
-                ArchiveDOE(
-                    dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
-                    site_control_group_id=t.site_control_group_id,
-                    site_id=t.site_id,
-                    calculation_log_id=t.calculation_log_id,
-                    created_time=t.created_time,
-                    changed_time=t.changed_time,
-                    start_time=t.start_time,
-                    duration_seconds=t.duration_seconds,
-                    end_time=t.end_time,
-                    superseded=t.superseded,
-                    randomize_start_seconds=t.randomize_start_seconds,
-                    import_limit_active_watts=t.import_limit_active_watts,
-                    export_limit_watts=t.export_limit_watts,
-                    generation_limit_active_watts=t.generation_limit_active_watts,
-                    load_limit_active_watts=t.load_limit_active_watts,
-                    set_energized=t.set_energized,
-                    set_connected=t.set_connected,
-                    set_point_percentage=t.set_point_percentage,
-                    ramp_time_seconds=t.ramp_time_seconds,
-                    display_id=t.display_id,
-                    storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
-                    archive_id=t.archive_id,
-                    archive_time=t.archive_time,
-                    deleted_time=t.deleted_time,
-                ),
-                site.timezone_id,
+            ArchiveDOE(
+                dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
+                site_control_group_id=t.site_control_group_id,
+                site_group_id=t.site_group_id,
+                calculation_log_id=t.calculation_log_id,
+                created_time=t.created_time,
+                changed_time=t.changed_time,
+                start_time=t.start_time,
+                duration_seconds=t.duration_seconds,
+                end_time=t.end_time,
+                superseded=t.superseded,
+                randomize_start_seconds=t.randomize_start_seconds,
+                import_limit_active_watts=t.import_limit_active_watts,
+                export_limit_watts=t.export_limit_watts,
+                generation_limit_active_watts=t.generation_limit_active_watts,
+                load_limit_active_watts=t.load_limit_active_watts,
+                set_energized=t.set_energized,
+                set_connected=t.set_connected,
+                set_point_percentage=t.set_point_percentage,
+                ramp_time_seconds=t.ramp_time_seconds,
+                display_id=t.display_id,
+                storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
+                archive_id=t.archive_id,
+                archive_time=t.archive_time,
+                deleted_time=t.deleted_time,
             )
             if t.is_archive
-            else localize_start_time_for_entity(
-                DOE(
-                    dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
-                    site_control_group_id=t.site_control_group_id,
-                    site_id=t.site_id,
-                    calculation_log_id=t.calculation_log_id,
-                    created_time=t.created_time,
-                    changed_time=t.changed_time,
-                    start_time=t.start_time,
-                    duration_seconds=t.duration_seconds,
-                    end_time=t.end_time,
-                    superseded=t.superseded,
-                    randomize_start_seconds=t.randomize_start_seconds,
-                    import_limit_active_watts=t.import_limit_active_watts,
-                    export_limit_watts=t.export_limit_watts,
-                    generation_limit_active_watts=t.generation_limit_active_watts,
-                    load_limit_active_watts=t.load_limit_active_watts,
-                    set_energized=t.set_energized,
-                    set_connected=t.set_connected,
-                    set_point_percentage=t.set_point_percentage,
-                    ramp_time_seconds=t.ramp_time_seconds,
-                    display_id=t.display_id,
-                    storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
-                ),
-                site.timezone_id,
+            else DOE(
+                dynamic_operating_envelope_id=t.dynamic_operating_envelope_id,
+                site_control_group_id=t.site_control_group_id,
+                site_group_id=t.site_group_id,
+                calculation_log_id=t.calculation_log_id,
+                created_time=t.created_time,
+                changed_time=t.changed_time,
+                start_time=t.start_time,
+                duration_seconds=t.duration_seconds,
+                end_time=t.end_time,
+                superseded=t.superseded,
+                randomize_start_seconds=t.randomize_start_seconds,
+                import_limit_active_watts=t.import_limit_active_watts,
+                export_limit_watts=t.export_limit_watts,
+                generation_limit_active_watts=t.generation_limit_active_watts,
+                load_limit_active_watts=t.load_limit_active_watts,
+                set_energized=t.set_energized,
+                set_connected=t.set_connected,
+                set_point_percentage=t.set_point_percentage,
+                ramp_time_seconds=t.ramp_time_seconds,
+                display_id=t.display_id,
+                storage_target_active_watts=t.storage_target_active_watts,  # Storage extension
             )
         )
         for t in resp.all()
@@ -366,29 +347,26 @@ async def select_active_does_include_deleted(
 async def count_does_at_timestamp(
     session: AsyncSession,
     site_control_group_id: int,
-    aggregator_id: int,
-    site_id: int | None,
+    site_group_ids: set[int],
     timestamp: datetime,
     changed_after: datetime,
 ) -> int:
     """Fetches the number of DynamicOperatingEnvelope's stored that contain timestamp.
 
     site_control_group_id: The SiteControlGroup to select doe's from
-    aggregator_id: The aggregator ID to filter sites/does against
-    site_id: If None, no filter on site_id otherwise filters the results to this specific site_id
+    site_group_ids: The site group IDs that the returned records must belong to
     timestamp: The actual timestamp that a DOE range must contain in order to be considered
     changed_after: Only doe's with a changed_time greater than this value will be counted (0 will count everything)"""
 
     return await _does_at_timestamp(
-        True, session, site_control_group_id, aggregator_id, site_id, timestamp, 0, changed_after, None
+        True, session, site_control_group_id, site_group_ids, timestamp, 0, changed_after, None
     )  # ty:ignore[invalid-return-type] # Test coverage will ensure that it's an entity list
 
 
 async def select_does_at_timestamp(
     session: AsyncSession,
     site_control_group_id: int,
-    aggregator_id: int,
-    site_id: int | None,
+    site_group_ids: set[int],
     timestamp: datetime,
     start: int,
     changed_after: datetime,
@@ -398,8 +376,7 @@ async def select_does_at_timestamp(
     local timezone for the site
 
     site_control_group_id: The SiteControlGroup to select doe's from
-    aggregator_id: The aggregator ID to filter sites/does against
-    site_id: If None, no filter on site_id otherwise filters the results to this specific site_id
+    site_group_ids: The site group IDs that the returned records must belong to
     timestamp: The actual timestamp that a DOE range must contain in order to be considered
     start: The number of matching entities to skip
     limit: The maximum number of entities to return
@@ -408,7 +385,7 @@ async def select_does_at_timestamp(
     Orders by 2030.5 requirements on DERControl which is start ASC, creation DESC, id DESC"""
 
     return await _does_at_timestamp(
-        False, session, site_control_group_id, aggregator_id, site_id, timestamp, start, changed_after, limit
+        False, session, site_control_group_id, site_group_ids, timestamp, start, changed_after, limit
     )  # ty:ignore[invalid-return-type]  # Test coverage will ensure that it's an entity list
 
 

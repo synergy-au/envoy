@@ -14,8 +14,7 @@ from envoy_schema.server.schema.sep2.types import (
 from sqlalchemy import INTEGER, VARCHAR, BigInteger, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from envoy.server.model import Base
-from envoy.server.model.site import Site
+from envoy.server.model import Base, SiteGroup
 
 
 class Tariff(Base):
@@ -92,7 +91,9 @@ class TariffGeneratedRate(Base):
     tariff_component_id: Mapped[int] = mapped_column(
         ForeignKey("tariff_component.tariff_component_id")
     )  # The parent component that describes uom being priced
-    site_id: Mapped[int] = mapped_column(ForeignKey("site.site_id"))  # The site that this rate applies to
+    site_group_id: Mapped[int] = mapped_column(
+        ForeignKey("site_group.site_group_id")
+    )  # The SiteGroup whose member sites this rate applies to
 
     calculation_log_id: Mapped[int | None] = mapped_column(
         ForeignKey("calculation_log.calculation_log_id"), nullable=True, index=True
@@ -131,19 +132,19 @@ class TariffGeneratedRate(Base):
     )  # When the rate was created/changed
 
     tariff_component: Mapped["TariffComponent"] = relationship(back_populates="tariff_generated_rates", lazy="raise")
-    site: Mapped["Site"] = relationship(lazy="raise")
+    site_group: Mapped[SiteGroup] = relationship(lazy="raise")
 
     __table_args__ = (
         Index(
-            "ix_tariff_generated_rate_tariff_component_id_end_time_site_id",
+            "ix_tariff_generated_rate_tariff_component_id_end_time_group_id",
             "tariff_component_id",
             "end_time",
-            "site_id",
+            "site_group_id",
         ),  # Used by the primary csip-aus DERControl list endpoint (for fetching via RateComponents)
         Index(
-            "ix_tariff_generated_rate_tariff_id_end_time_site_id",
+            "ix_tariff_generated_rate_tariff_id_end_time_site_group_id",
             "tariff_id",
             "end_time",
-            "site_id",
+            "site_group_id",
         ),  # Used by the primary csip-aus DERControl list endpoint (for fetching via Tariff)
     )

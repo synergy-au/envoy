@@ -92,7 +92,7 @@ class TariffGeneratedRateListMapper:
             tariff_generated_rate_id=rate.tariff_generated_rate_id,
             tariff_id=rate.tariff_id,
             tariff_component_id=rate.tariff_component_id,
-            site_id=rate.site_id,
+            site_group_id=rate.site_group_id,
             calculation_log_id=rate.calculation_log_id,
             changed_time=rate.changed_time,
             created_time=rate.created_time,
@@ -115,7 +115,7 @@ class TariffGeneratedRateListMapper:
         return TariffGeneratedRate(
             tariff_id=tariff_id,
             tariff_component_id=rate.tariff_component_id,
-            site_id=rate.site_id,
+            site_group_id=rate.site_group_id,
             calculation_log_id=rate.calculation_log_id,
             changed_time=changed_time,
             start_time=rate.start_time,

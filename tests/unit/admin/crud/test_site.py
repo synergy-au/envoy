@@ -72,7 +72,7 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             None,
             [1, 2, 3, 4, 5, 6],
-            [[1, 2], [1], [1], [], [], []],
+            [[1, 2], [1, 4], [1, 5], [], [], []],
             [(1, 1, 1, 1), None, None, None, None, None],
         ),
         (
@@ -81,7 +81,7 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC),
             [3, 4, 5, 6],
-            [[1], [], [], []],
+            [[1, 5], [], [], []],
             [None, None, None, None],
         ),
         (
@@ -90,11 +90,11 @@ async def test_count_all_sites_empty(pg_empty_config):
             "",
             None,
             [1, 2, 3, 4, 5, 6],
-            [[1, 2], [1], [1], [], [], []],
+            [[1, 2], [1, 4], [1, 5], [], [], []],
             [(1, 1, 1, 1), None, None, None, None, None],
         ),
-        (0, 500, "Group-1", None, [1, 2, 3], [[1, 2], [1], [1]], [(1, 1, 1, 1), None, None]),
-        (0, 500, "Group-1", datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC), [3], [[1]], [None]),
+        (0, 500, "Group-1", None, [1, 2, 3], [[1, 2], [1, 4], [1, 5]], [(1, 1, 1, 1), None, None]),
+        (0, 500, "Group-1", datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC), [3], [[1, 5]], [None]),
         (0, 500, "Group-2", None, [1], [[1, 2]], [(1, 1, 1, 1)]),
         (0, 500, "Group-3", None, [], [], []),
         (0, 500, "Group-DNE", None, [], [], []),
@@ -104,16 +104,16 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             None,
             [2, 3, 4, 5, 6],
-            [[1], [1], [], [], []],
+            [[1, 4], [1, 5], [], [], []],
             [None, None, None, None, None],
         ),
-        (2, 500, None, None, [3, 4, 5, 6], [[1], [], [], []], [None, None, None, None]),
+        (2, 500, None, None, [3, 4, 5, 6], [[1, 5], [], [], []], [None, None, None, None]),
         (3, 500, None, None, [4, 5, 6], [[], [], []], [None, None, None]),
         (6, 500, None, None, [], [], []),
-        (1, 2, None, None, [2, 3], [[1], [1]], [None, None]),
-        (2, 2, None, None, [3, 4], [[1], []], [None, None]),
+        (1, 2, None, None, [2, 3], [[1, 4], [1, 5]], [None, None]),
+        (2, 2, None, None, [3, 4], [[1, 5], []], [None, None]),
         (0, 0, None, None, [], [], []),
-        (1, 1, "Group-1", None, [2], [[1]], [None]),
+        (1, 1, "Group-1", None, [2], [[1, 4]], [None]),
     ],
 )
 @pytest.mark.anyio
@@ -251,7 +251,7 @@ async def test_max_limit_select_all_sites(pg_base_config):
 @pytest.mark.anyio
 async def test_count_all_site_groups(pg_base_config):
     async with generate_async_session(pg_base_config) as session:
-        assert (await count_all_site_groups(session)) == 3
+        assert (await count_all_site_groups(session)) == 5
 
 
 @pytest.mark.anyio
@@ -263,10 +263,10 @@ async def test_count_all_site_groups_empty(pg_empty_config):
 @pytest.mark.parametrize(
     "start, limit, group, expected_id_count",
     [
-        (0, 500, None, [(1, 3), (2, 1), (3, 0)]),
+        (0, 500, None, [(1, 3), (2, 1), (3, 0), (4, 1), (5, 1)]),
         (0, 2, None, [(1, 3), (2, 1)]),
         (1, 2, None, [(2, 1), (3, 0)]),
-        (2, 2, None, [(3, 0)]),
+        (2, 2, None, [(3, 0), (4, 1)]),
         (0, 500, "Group-1", [(1, 3)]),
         (0, 500, "Group-2", [(2, 1)]),
         (0, 500, "Group-3", [(3, 0)]),
@@ -300,8 +300,8 @@ async def test_select_single_site_no_scoping_missing_site_ids(pg_base_config, mi
     "site_id, expected_group_ids, expected_der_ids, expected_site_import_watts",
     [
         (1, [1, 2], (1, 1, 1, 1), Decimal("10.10")),
-        (2, [1], None, None),
-        (3, [1], None, Decimal("20.20")),
+        (2, [1, 4], None, None),
+        (3, [1, 5], None, Decimal("20.20")),
         (4, [], None, None),
         (5, [], None, None),
         (6, [], None, None),
@@ -425,5 +425,5 @@ async def test_set_site_group_assignments_does_not_affect_other_sites(pg_base_co
 
     async with generate_async_session(pg_base_config) as session:
         assert await _get_group_ids_for_site(session, 1) == [3]
-        assert await _get_group_ids_for_site(session, 2) == [1]  # unchanged
-        assert await _get_group_ids_for_site(session, 3) == [1]  # unchanged
+        assert await _get_group_ids_for_site(session, 2) == [1, 4]  # unchanged
+        assert await _get_group_ids_for_site(session, 3) == [1, 5]  # unchanged

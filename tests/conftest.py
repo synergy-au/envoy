@@ -119,15 +119,6 @@ def pg_base_config(pg_empty_config: Connection, request: pytest.FixtureRequest) 
 
 
 @pytest.fixture
-def pg_la_timezone(pg_base_config) -> Generator[Connection, None, None]:
-    """Mutates pg_base_config to set all site timezones to Los Angeles time"""
-
-    execute_sql_file_for_connection(pg_base_config, "tests/data/sql/la_timezone.sql")
-
-    yield pg_base_config
-
-
-@pytest.fixture
 def pg_additional_does(pg_base_config: Connection) -> Generator[Connection, None, None]:
     """Mutates pg_base_config to include additional DOEs"""
 
