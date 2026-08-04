@@ -356,10 +356,7 @@ async def fetch_rates_by_changed_at(
 
     # A rate's parent Tariff can also restrict visibility via required_site_group_id - resolve each referenced
     # Tariff's requirement (if any) and the membership of whatever SiteGroup it requires
-    referenced_tariff_ids = {
-        e.tariff_id
-        for e in cast(Iterable[TariffGeneratedRate | ArchiveTariffGeneratedRate], chain(active_rates, deleted_rates))
-    }
+    referenced_tariff_ids = {e.tariff_id for e in chain(active_rates, deleted_rates)}
     required_group_by_tariff_id: dict[int, int | None] = {}
     if referenced_tariff_ids:
         tariff_rows = (
@@ -384,11 +381,10 @@ async def fetch_rates_by_changed_at(
         for site_group_id, site_id in required_members:
             member_site_ids_by_required_group.setdefault(site_group_id, set()).add(site_id)
 
-    def expand_rate(
+    def expand_per_site(
         rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
-    ) -> list[tuple[int, int, TariffGeneratedRate | ArchiveTariffGeneratedRate]]:
-        """Expands a single rate into one (aggregator_id, site_id, rate) tuple per member site of its
-        SiteGroup.
+    ) -> list[tuple[int, int]]:
+        """Expands a single rate into one (aggregator_id, site_id) tuple per member site of its SiteGroup.
 
         A member site is excluded if the rate's parent Tariff has a required_site_group_id set and the site isn't
         a member of that SiteGroup"""
@@ -397,21 +393,20 @@ async def fetch_rates_by_changed_at(
             None if required_group_id is None else member_site_ids_by_required_group.get(required_group_id, set())
         )
         return [
-            (aggregator_id, site_id, rate)
-            for rate in cast(Iterable[TariffGeneratedRate], active_rates)
+            (aggregator_id, site_id)
             for aggregator_id, site_id in member_sites_by_group_id.get(rate.site_group_id, [])
             if allowed_site_ids is None or site_id in allowed_site_ids
         ]
 
     site_scoped_active_rates = [
-        SiteScopedTariffGeneratedRate(aggregator_id, site_id, cast(TariffGeneratedRate, rate))
-        for e in active_rates
-        for aggregator_id, site_id, rate in expand_rate(e)
+        SiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
+        for rate in active_rates
+        for aggregator_id, site_id in expand_per_site(rate)
     ]
     site_scoped_deleted_rates = [
-        ArchiveSiteScopedTariffGeneratedRate(aggregator_id, site_id, cast(ArchiveTariffGeneratedRate, rate))
-        for e in deleted_rates
-        for aggregator_id, site_id, rate in expand_rate(e)
+        ArchiveSiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
+        for rate in deleted_rates
+        for aggregator_id, site_id in expand_per_site(rate)
     ]
 
     return [
@@ -463,15 +458,60 @@ async def fetch_does_by_changed_at(
         for site_group_id, aggregator_id, site_id in member_sites:
             member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id))
 
+    # A controls's parent SiteControlGroup can also restrict visibility via required_site_group_id - resolve each
+    # referenced SiteControlGroup's requirement (if any) and the membership of whatever SiteGroup it requires
+    referenced_scg_ids = {e.site_control_group_id for e in chain(active_does, deleted_does)}
+    required_group_by_scg_id: dict[int, int | None] = {}
+    if referenced_scg_ids:
+        scg_rows = (
+            await session.execute(
+                select(SiteControlGroup.site_control_group_id, SiteControlGroup.required_site_group_id).where(
+                    SiteControlGroup.site_control_group_id.in_(referenced_scg_ids)
+                )
+            )
+        ).tuples()
+        required_group_by_scg_id = dict(scg_rows.all())
+
+    referenced_required_group_ids = {gid for gid in required_group_by_scg_id.values() if gid is not None}
+    member_site_ids_by_required_group: dict[int, set[int]] = {}
+    if referenced_required_group_ids:
+        required_members = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, SiteGroupAssignment.site_id).where(
+                    SiteGroupAssignment.site_group_id.in_(referenced_required_group_ids)
+                )
+            )
+        ).all()
+        for site_group_id, site_id in required_members:
+            member_site_ids_by_required_group.setdefault(site_group_id, set()).add(site_id)
+
+    def expand_per_site(
+        control: DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope,
+    ) -> list[tuple[int, int]]:
+        """Expands a single control into one (aggregator_id, site_id) tuple per member site of its
+        SiteGroup.
+
+        A member site is excluded if the control's parent SiteControlGroup has a required_site_group_id set and the
+        site isn't a member of that SiteGroup"""
+        required_group_id = required_group_by_scg_id.get(control.site_control_group_id)
+        allowed_site_ids = (
+            None if required_group_id is None else member_site_ids_by_required_group.get(required_group_id, set())
+        )
+        return [
+            (aggregator_id, site_id)
+            for aggregator_id, site_id in member_sites_by_group_id.get(control.site_group_id, [])
+            if allowed_site_ids is None or site_id in allowed_site_ids
+        ]
+
     site_scoped_active_does = [
-        SiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, doe)
-        for doe in cast(Iterable[DynamicOperatingEnvelope], active_does)
-        for aggregator_id, site_id in member_sites_by_group_id.get(doe.site_group_id, [])
+        SiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, control)
+        for control in active_does
+        for aggregator_id, site_id in expand_per_site(control)
     ]
     site_scoped_deleted_does = [
-        ArchiveSiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, doe)
-        for doe in cast(Iterable[ArchiveDynamicOperatingEnvelope], deleted_does)
-        for aggregator_id, site_id in member_sites_by_group_id.get(doe.site_group_id, [])
+        ArchiveSiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, control)
+        for control in deleted_does
+        for aggregator_id, site_id in expand_per_site(control)
     ]
 
     return AggregatorBatchedEntities(

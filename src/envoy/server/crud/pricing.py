@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.server.crud.site_group import fetch_site_group_membership
@@ -21,14 +21,14 @@ async def select_tariff_fsa_ids(session: AsyncSession, changed_after: datetime) 
 
 
 async def select_tariff_count(
-    session: AsyncSession, after: datetime, fsa_id: int | None, site_id: int | None = None
+    session: AsyncSession, after: datetime, fsa_id: int | None, site_group_ids: set[int] | None = None
 ) -> int:
     """Fetches the number of tariffs stored
 
     after: Only tariffs with a changed_time greater than this value will be counted (set to 0 to count everything)
     fsa_id: If specified - only count Tariffs with this value for fsa_id
-    site_id: If specified, hides any Tariff whose required_site_group_id is set and doesn't include site_id as a
-        member. If None, no visibility filtering is applied (eg for admin use)."""
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
@@ -40,8 +40,10 @@ async def select_tariff_count(
     if fsa_id is not None:
         stmt = stmt.where(Tariff.fsa_id == fsa_id)
 
-    if site_id is not None:
-        stmt = stmt.where(required_site_group_visible_to_site(Tariff.required_site_group_id, site_id))
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
 
     resp = await session.execute(stmt)
     return resp.scalar_one()
@@ -53,7 +55,7 @@ async def select_all_tariffs(
     changed_after: datetime,
     limit: int,
     fsa_id: int | None,
-    site_id: int | None = None,
+    site_group_ids: set[int] | None = None,
 ) -> Sequence[Tariff]:
     """Selects tariffs with some basic pagination / filtering based on change time
 
@@ -63,8 +65,8 @@ async def select_all_tariffs(
     limit: The maximum number of entities to return
     changed_after: removes any entities with a changed_date BEFORE this value (set to datetime.min to not filter)
     fsa_id: If specified - only include Tariffs with this value for fsa_id
-    site_id: If specified, hides any Tariff whose required_site_group_id is set and doesn't include site_id as a
-        member. If None, no visibility filtering is applied (eg for admin use)."""
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
@@ -83,25 +85,31 @@ async def select_all_tariffs(
     if fsa_id is not None:
         stmt = stmt.where(Tariff.fsa_id == fsa_id)
 
-    if site_id is not None:
-        stmt = stmt.where(required_site_group_visible_to_site(Tariff.required_site_group_id, site_id))
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
 
     resp = await session.execute(stmt)
     return resp.scalars().all()
 
 
-async def select_single_tariff(session: AsyncSession, tariff_id: int, site_id: int | None = None) -> Tariff | None:
+async def select_single_tariff(
+    session: AsyncSession, tariff_id: int, site_group_ids: set[int] | None = None
+) -> Tariff | None:
     """Requests a single tariff based on the primary key - returns None if it does not exist
 
-    site_id: If specified, returns None if the Tariff's required_site_group_id is set and doesn't include site_id
-        as a member. If None, no visibility filtering is applied (eg for admin use)."""
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
     stmt = select(Tariff).where(Tariff.tariff_id == tariff_id)
 
-    if site_id is not None:
-        stmt = stmt.where(required_site_group_visible_to_site(Tariff.required_site_group_id, site_id))
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
 
     resp = await session.execute(stmt)
     return resp.scalar_one_or_none()

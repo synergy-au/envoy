@@ -64,11 +64,11 @@ class DERProgramManager:
             limit=limit,
             changed_after=changed_after,
             fsa_id=fsa_id,
+            site_group_ids=site_group_ids,
             include_defaults=True,
-            site_id=site.site_id,
         )
         site_control_group_count = await count_site_control_groups(
-            session, changed_after, fsa_id=fsa_id, site_id=site.site_id
+            session, changed_after, site_group_ids=site_group_ids, fsa_id=fsa_id
         )
         control_counts_by_group: list[tuple[SiteControlGroup, int]] = []
         for group in site_control_groups:
@@ -106,11 +106,13 @@ class DERProgramManager:
         site_group_ids = await fetch_site_group_membership(
             session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
         )
+        if site_group_ids is None:
+            raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
 
         site_control_group = await select_site_control_group_by_id(
-            session, der_program_id, include_default=True, site_id=scope.site_id
+            session, der_program_id, site_group_ids=site_group_ids, include_default=True
         )
-        if not site_control_group or site_group_ids is None:
+        if site_control_group is None:
             raise NotFoundError(f"der_program_id {der_program_id} is not accessible / does not exist")
 
         now = utc_now()
@@ -229,7 +231,15 @@ class DERControlManager:
     ) -> DefaultDERControl:
         """Returns a default DOE control for DERProgram - raises an error if the referenced DERProgram DNE"""
 
-        scg = await select_site_control_group_by_id(session, der_program_id, include_default=True)
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
+            raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
+
+        scg = await select_site_control_group_by_id(
+            session, der_program_id, include_default=True, site_group_ids=site_group_ids
+        )
         if not scg:
             raise NotFoundError(f"DERProgram {der_program_id} for site {scope.site_id} is not accessible / missing.")
 

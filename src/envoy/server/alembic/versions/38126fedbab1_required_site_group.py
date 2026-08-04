@@ -1,7 +1,7 @@
 """required_site_group
 
-Revision ID: 221e711a4555
-Revises: ab6361a582b3
+Revision ID: 38126fedbab1
+Revises: c678e057f420
 Create Date: 2026-07-29 00:00:00.000000
 """
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "221e711a4555"
-down_revision = "ab6361a582b3"
+revision = "38126fedbab1"
+down_revision = "c678e057f420"
 branch_labels = None
 depends_on = None
 

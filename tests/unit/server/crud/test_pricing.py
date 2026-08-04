@@ -24,10 +24,6 @@ AEST = timezone(timedelta(hours=10))
 UTC = UTC
 BASE = datetime(2000, 1, 1, tzinfo=UTC)  # Convenience - used a lot for initial creation times
 
-# TariffGeneratedRate now targets a SiteGroup rather than a single Site. base_config.sql sets up a singleton
-# SiteGroup per legacy site_id so every existing test fixture rate still targets exactly one site, matching this map.
-SITE_ID_TO_SINGLETON_GROUP_ID = {1: 2, 2: 4, 3: 5}
-
 
 @pytest.mark.parametrize(
     "changed_after, expected_fsa_ids",
@@ -466,7 +462,7 @@ async def tariff_with_required_site_group(pg_base_config):
                 seed=404,
                 tariff_id=4,
                 fsa_id=None,
-                required_site_group_id=SITE_ID_TO_SINGLETON_GROUP_ID[2],
+                required_site_group_id=4,
                 changed_time=datetime(2023, 1, 2, 14, 1, 2, tzinfo=UTC),
             )
         )
@@ -475,21 +471,22 @@ async def tariff_with_required_site_group(pg_base_config):
 
 
 @pytest.mark.parametrize(
-    "site_id, expected_visible",
+    "site_group_ids, expected_visible",
     [
         (None, True),  # No site scope (eg admin) - always visible
-        (2, True),  # site2 is a member of the required SiteGroup
-        (1, False),  # site1 is not a member of the required SiteGroup
-        (3, False),  # site3 is not a member of the required SiteGroup
-        (99, False),  # site doesn't even exist
+        ({4}, True),
+        ({1, 99, 4}, True),
+        ({1, 2, 3, 99}, False),
+        ({3}, False),
+        (set(), False),
     ],
 )
 @pytest.mark.anyio
 async def test_select_single_tariff_required_site_group_id_filtering(
-    tariff_with_required_site_group, site_id: int | None, expected_visible: bool
+    tariff_with_required_site_group, site_group_ids: set[int] | None, expected_visible: bool
 ):
     async with generate_async_session(tariff_with_required_site_group) as session:
-        result = await select_single_tariff(session, 4, site_id=site_id)
+        result = await select_single_tariff(session, 4, site_group_ids=site_group_ids)
         if expected_visible:
             assert result is not None
             assert result.tariff_id == 4
@@ -498,22 +495,24 @@ async def test_select_single_tariff_required_site_group_id_filtering(
 
 
 @pytest.mark.parametrize(
-    "site_id, expect_included",
+    "site_group_ids, expect_included",
     [
         (None, True),
-        (2, True),
-        (1, False),
-        (3, False),
+        ({1, 4}, True),
+        ({4, 99}, True),
+        ({1, 2}, False),
+        ({1, 5}, False),
+        (set(), False),
     ],
 )
 @pytest.mark.anyio
 async def test_select_all_tariffs_and_count_required_site_group_id_filtering(
-    tariff_with_required_site_group, site_id: int | None, expect_included: bool
+    tariff_with_required_site_group, site_group_ids: set[int] | None, expect_included: bool
 ):
     async with generate_async_session(tariff_with_required_site_group) as session:
-        tariffs = await select_all_tariffs(session, 0, datetime.min, 99, None, site_id=site_id)
+        tariffs = await select_all_tariffs(session, 0, datetime.min, 99, None, site_group_ids=site_group_ids)
         tariff_ids = [t.tariff_id for t in tariffs]
-        count = await select_tariff_count(session, datetime.min, None, site_id=site_id)
+        count = await select_tariff_count(session, datetime.min, None, site_group_ids=site_group_ids)
 
         if expect_included:
             assert 4 in tariff_ids

@@ -2,11 +2,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 
-from sqlalchemy import Select, func, literal_column, select
+from sqlalchemy import Select, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from envoy.server.crud.site_group import fetch_site_group_membership, required_site_group_visible_to_site
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope as ArchiveDOE
 from envoy.server.model.doe import DynamicOperatingEnvelope as DOE
 from envoy.server.model.doe import SiteControlGroup
@@ -397,13 +397,11 @@ async def _site_control_groups(
     limit: int | None,
     fsa_id: int | None,
     include_defaults: bool,
-    site_id: int | None = None,
+    site_group_ids: set[int],
 ) -> Sequence[SiteControlGroup] | int:
     """Internal utility for fetching/counting SiteControlGroup's
 
-    site_id: If specified, hides any SiteControlGroup whose required_site_group_id is set and doesn't include
-        site_id as a member (via SiteGroupAssignment). If None, no visibility filtering is applied (eg for admin
-        use, which should see every SiteControlGroup regardless of visibility restrictions).
+    site_group_ids: Only includes SiteControlGroups that are visible to a site that is a member of these SiteGroups.
 
     Orders by 2030.5 requirements on DERProgram which is primacy ASC, primary key DESC"""
 
@@ -419,8 +417,12 @@ async def _site_control_groups(
     if fsa_id is not None:
         stmt = stmt.where(SiteControlGroup.fsa_id == fsa_id)
 
-    if site_id is not None:
-        stmt = stmt.where(required_site_group_visible_to_site(SiteControlGroup.required_site_group_id, site_id))
+    stmt = stmt.where(
+        or_(
+            SiteControlGroup.required_site_group_id.is_(None),
+            SiteControlGroup.required_site_group_id.in_(site_group_ids),
+        )
+    )
 
     if not is_counting:
         stmt = stmt.order_by(SiteControlGroup.primacy.asc(), SiteControlGroup.site_control_group_id.desc())
@@ -441,31 +443,34 @@ async def select_site_control_groups(
     changed_after: datetime,
     limit: int | None,
     fsa_id: int | None,
+    site_group_ids: set[int],
     include_defaults: bool = False,
-    site_id: int | None = None,
 ) -> Sequence[SiteControlGroup]:
     """Fetches SiteControlGroup with some basic pagination / filtering on change time.
 
     if fsa_id is specified - only SiteControlGroups with this fsa_id value will be returned
 
-    site_id: If specified, hides any SiteControlGroup whose required_site_group_id is set and doesn't include
-        site_id as a member. If None, no visibility filtering is applied.
+    site_group_ids: What SiteGroup's are in scope - will hide any SiteControlGroup that aren't visible to any these.
 
     Orders by 2030.5 requirements on DERProgram which is primacy ASC, primary key DESC"""
 
     # Test coverage will ensure that it's an entity list
-    return await _site_control_groups(False, session, start, changed_after, limit, fsa_id, include_defaults, site_id)  # ty:ignore[invalid-return-type]
+    return await _site_control_groups(
+        False, session, start, changed_after, limit, fsa_id, include_defaults, site_group_ids
+    )  # ty:ignore[invalid-return-type]
 
 
 async def count_site_control_groups(
-    session: AsyncSession, changed_after: datetime, fsa_id: int | None, site_id: int | None = None
+    session: AsyncSession,
+    changed_after: datetime,
+    site_group_ids: set[int],
+    fsa_id: int | None,
 ) -> int:
     """Counts SiteControlGroups that have been modified after the specified change time.
 
     if fsa_id is specified - only SiteControlGroups with this fsa_id value will be counted
 
-    site_id: If specified, hides any SiteControlGroup whose required_site_group_id is set and doesn't include
-        site_id as a member. If None, no visibility filtering is applied.
+    site_group_ids: What SiteGroup's are in scope - will hide any SiteControlGroup that aren't visible to any these.
     """
 
     # Test coverage will ensure that it's an int
@@ -477,7 +482,7 @@ async def count_site_control_groups(
         None,
         fsa_id,
         False,
-        site_id,
+        site_group_ids,
     )  # ty:ignore[invalid-return-type]
 
 
@@ -501,20 +506,28 @@ async def count_site_control_groups_by_fsa_id(session: AsyncSession) -> dict[int
 
 
 async def select_site_control_group_by_id(
-    session: AsyncSession, site_control_group_id: int, include_default: bool = False, site_id: int | None = None
+    session: AsyncSession,
+    site_control_group_id: int,
+    include_default: bool = False,
+    site_group_ids: set[int] | None = None,
 ) -> SiteControlGroup | None:
     """Fetches a single SiteControlGroup with the specified site_control_group_id. Returns None if it can't be found.
 
-    site_id: If specified, returns None if the SiteControlGroup's required_site_group_id is set and doesn't
-        include site_id as a member. If None, no visibility filtering is applied (eg for admin use)."""
+    site_group_ids: If specified, returns None if the SiteControlGroup's required_site_group_id is set and doesn't
+        include any of these values as a member."""
 
     stmt = select(SiteControlGroup).where(SiteControlGroup.site_control_group_id == site_control_group_id).limit(1)
 
-    if site_id is not None:
-        stmt = stmt.where(required_site_group_visible_to_site(SiteControlGroup.required_site_group_id, site_id))
-
     if include_default:
         stmt = stmt.options(selectinload(SiteControlGroup.site_control_group_default))
+
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(
+                SiteControlGroup.required_site_group_id.is_(None),
+                SiteControlGroup.required_site_group_id.in_(site_group_ids),
+            )
+        )
 
     resp = await session.execute(stmt)
     return resp.scalar_one_or_none()
