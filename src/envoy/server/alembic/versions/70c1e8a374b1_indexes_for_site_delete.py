@@ -1,7 +1,7 @@
 """indexes_for_site_delete
 
-Revision ID: 4d68a22c9f62
-Revises: 655e16192ee0
+Revision ID: 70c1e8a374b1
+Revises: b7e50bccd7aa
 Create Date: 2026-07-29 18:07:22.928954
 
 """
@@ -9,8 +9,8 @@ Create Date: 2026-07-29 18:07:22.928954
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "4d68a22c9f62"
-down_revision = "655e16192ee0"
+revision = "70c1e8a374b1"
+down_revision = "b7e50bccd7aa"
 branch_labels = None
 depends_on = None
 
