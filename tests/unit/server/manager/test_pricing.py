@@ -65,8 +65,8 @@ async def test_fetch_tariff_profile_list_counts_members(
 
     # Assert
     assert response is mapped_tariffs
-    mock_select_all_tariffs.assert_called_once_with(mock_session, start, changed, limit, fsa_id)
-    mock_select_tariff_count.assert_called_once_with(mock_session, changed, fsa_id)
+    mock_select_all_tariffs.assert_called_once_with(mock_session, start, changed, limit, fsa_id, site_group_ids)
+    mock_select_tariff_count.assert_called_once_with(mock_session, changed, fsa_id, site_group_ids)
     assert_mock_session(mock_session)
 
     assert mock_count_active_rates_include_deleted.call_count == n_tariffs

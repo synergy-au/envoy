@@ -791,12 +791,12 @@ async def test_create_tariff_with_active_subscription(
         await session.commit()
 
     # Will match Sub 1/2
-    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1)
+    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1, required_site_group_id=None)
     resp = await admin_client_auth.post(TariffCreateUri, content=t_1.model_dump_json())
     assert resp.status_code == HTTPStatus.CREATED
 
     # Will only match Sub 1 (due to the fsa_id)
-    t_2 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff2", fsa_id=2)
+    t_2 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff2", fsa_id=2, required_site_group_id=None)
     resp = await admin_client_auth.post(TariffCreateUri, content=t_2.model_dump_json())
     assert resp.status_code == HTTPStatus.CREATED
 
@@ -904,12 +904,12 @@ async def test_update_tariff_with_active_subscription(
         await session.commit()
 
     # Will match Sub 1/2
-    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1)
+    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1, required_site_group_id=None)
     resp = await admin_client_auth.put(TariffUpdateUri.format(tariff_id=1), content=t_1.model_dump_json())
     assert resp.status_code == HTTPStatus.NO_CONTENT
 
     # Will only match Sub 1 (due to the fsa_id)
-    t_3 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff3", fsa_id=2)
+    t_3 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff3", fsa_id=2, required_site_group_id=None)
     resp = await admin_client_auth.put(TariffUpdateUri.format(tariff_id=3), content=t_3.model_dump_json())
     assert resp.status_code == HTTPStatus.NO_CONTENT
 

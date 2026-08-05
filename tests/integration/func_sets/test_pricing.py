@@ -20,9 +20,10 @@ from envoy_schema.server.schema.sep2.pricing import (
 )
 from freezegun import freeze_time
 from httpx import AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, update
 
 from envoy.server.manager.time import utc_now
+from envoy.server.model import Tariff
 from envoy.server.model.server import RuntimeServerConfig
 from tests.data.certificates.certificate1 import TEST_CERTIFICATE_FINGERPRINT as AGG_1_VALID_CERT
 from tests.integration.integration_server import cert_header
@@ -40,7 +41,6 @@ def agg_1_headers():
 async def test_get_tariff_profile_list_poll_rate(
     pg_base_config, client: AsyncClient, agg_1_headers, db_poll_rate: int | None, expected_poll_rate: int
 ):
-
     # Preload the DB with the RunTimeServerConfig
     async with generate_async_session(pg_base_config) as session:
         await session.execute(delete(RuntimeServerConfig))
@@ -56,6 +56,91 @@ async def test_get_tariff_profile_list_poll_rate(
     parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
     assert isinstance(parsed_response.pollRate, int)
     assert parsed_response.pollRate == expected_poll_rate
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "site_id, fsa_id, start, limit, changed_after, expected_tariffs_with_count",
+    [
+        (
+            1,
+            1,
+            0,
+            99,
+            None,
+            [("/edev/1/tp/2", 1, 1), ("/edev/1/tp/1", 3, 4)],
+        ),  # Site 1 is a member of group 1/2
+        (
+            1,
+            2,
+            0,
+            99,
+            None,
+            [("/edev/1/tp/3", 0, 0)],
+        ),  # Site 1 is a member of group 1/2
+        (2, 1, 0, 99, None, [("/edev/2/tp/2", 1, 0)]),  # Site 2 is a member of group 1
+        (1, 1, 1, 99, None, [("/edev/1/tp/1", 3, 4)]),  # Site 1 is a member of group 1/2
+        (
+            1,
+            1,
+            0,
+            1,
+            None,
+            [("/edev/1/tp/2", 1, 1)],
+        ),  # Site 1 is a member of group 1/2
+        (4, 1, 0, 99, None, []),  # Site 4 has no group
+    ],
+)
+@freeze_time("2010-01-01")  # Prices are time sensitive - set time far enough in the past to ensure all pass
+async def test_get_tariffprofilelist_required_site_group_id(
+    pg_base_config,
+    client: AsyncClient,
+    agg_1_headers,
+    site_id: int,
+    fsa_id: int,
+    start: int | None,
+    limit: int | None,
+    changed_after: datetime | None,
+    expected_tariffs_with_count: list[tuple[str, int, int]],
+):
+    """Tests getting TariffProfile filters on required_site_group_id
+
+    expected_tariffs_with_count: (href, rate_component_count, combined_tti_count)"""
+
+    # Arrange - setup every Tariff to be restricted to Group #1 / #2 membership
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(update(Tariff).values(required_site_group_id=2).where(Tariff.tariff_id.in_([1, 3])))
+        await session.execute(update(Tariff).values(required_site_group_id=1).where(Tariff.tariff_id.in_([2])))
+        await session.commit()
+    path = uri.TariffProfileFSAListUri.format(site_id=site_id, fsa_id=fsa_id) + build_paging_params(
+        start, limit, changed_after
+    )
+    response = await client.get(path, headers=agg_1_headers)
+    assert_response_header(response, HTTPStatus.OK)
+    body = read_response_body_string(response)
+    assert len(body) > 0
+
+    parsed_response: TariffProfileListResponse = TariffProfileListResponse.from_xml(body)
+    assert parsed_response
+    assert parsed_response.href == uri.TariffProfileFSAListUri.format(site_id=site_id, fsa_id=fsa_id)
+    assert parsed_response.results == len(expected_tariffs_with_count)
+    assert len(parsed_response.TariffProfile or []) == len(expected_tariffs_with_count)
+
+    # Check that the rate counts and referenced rate component counts match our expectations
+    expected_tariffs = [href for (href, _, _) in expected_tariffs_with_count]
+    expected_rate_counts = [rate_count for (_, rate_count, _) in expected_tariffs_with_count]
+    expected_ctti_counts = [ctti_count for (_, _, ctti_count) in expected_tariffs_with_count]
+    assert expected_tariffs == [tp.href for tp in parsed_response.TariffProfile or []]
+    assert expected_rate_counts == [
+        tp.RateComponentListLink.all_
+        for tp in parsed_response.TariffProfile or []
+        if tp.RateComponentListLink is not None
+    ]
+    assert expected_ctti_counts == [
+        tp.CombinedTimeTariffIntervalListLink.all_
+        for tp in parsed_response.TariffProfile or []
+        if tp.CombinedTimeTariffIntervalListLink is not None
+    ]
 
 
 @pytest.mark.anyio

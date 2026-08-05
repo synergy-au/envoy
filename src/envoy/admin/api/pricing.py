@@ -100,6 +100,13 @@ async def update_tariff(tariff_id: int, tariff: TariffRequest) -> None:
         await TariffManager.update_existing_tariff(db.session, tariff_id, tariff)
     except NoResultFound as exc:
         raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
+    except IntegrityError as exc:
+        raise LoggedHttpException(
+            logger,
+            exc,
+            HTTPStatus.BAD_REQUEST,
+            "Specified foreign key value does not exist (eg required_site_group_id)",
+        ) from exc
 
 
 @router.get(

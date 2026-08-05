@@ -533,6 +533,7 @@ async def extra_site_control_groups(pg_base_config):
                 primacy=1,
                 site_control_group_id=4,
                 fsa_id=3,
+                required_site_group_id=None,
                 changed_time=datetime(2021, 4, 5, 10, 4, 0, 500000, tzinfo=UTC),
             )
         )
@@ -543,6 +544,7 @@ async def extra_site_control_groups(pg_base_config):
                 primacy=1,
                 site_control_group_id=5,
                 fsa_id=None,
+                required_site_group_id=None,
                 changed_time=datetime(2021, 4, 5, 10, 4, 0, 500000, tzinfo=UTC),
             )
         )
@@ -602,22 +604,27 @@ async def test_select_site_control_group_by_id(
 
 
 @pytest.mark.parametrize(
-    "start, limit, changed_after, fsa_id, expected_ids, expected_count",
+    "start, limit, changed_after, fsa_id, scg_restrictions, site_group_ids, expected_ids, expected_count",
     [
-        (0, 99, datetime.min, None, [1, 5, 4, 2, 3], 5),
-        (0, 99, datetime.min, 1, [1, 2, 3], 3),
-        (0, 99, datetime.min, 2, [], 0),
-        (0, 99, datetime.min, 3, [4], 1),
-        (1, 2, datetime.min, None, [5, 4], 5),
-        (1, 1, datetime.min, 1, [2], 3),
-        (99, 99, datetime.min, None, [], 5),
-        (0, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=UTC), None, [1, 5, 4, 2, 3], 5),
-        (3, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=UTC), None, [2, 3], 5),
-        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=UTC), None, [5, 4, 2, 3], 4),
-        (0, 99, datetime(2021, 4, 5, 10, 3, 0, tzinfo=UTC), None, [5, 4, 3], 3),
-        (0, 99, datetime(2021, 4, 5, 10, 4, 0, tzinfo=UTC), None, [5, 4], 2),
-        (0, 99, datetime(2021, 4, 5, 10, 5, 0, tzinfo=UTC), None, [], 0),
-        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=UTC), 1, [2, 3], 2),
+        (0, 99, datetime.min, None, {}, {2, 4}, [1, 5, 4, 2, 3], 5),  # no site_group restrictions in this test
+        (0, 99, datetime.min, None, {}, {99, 1}, [1, 5, 4, 2, 3], 5),  # no site_group restrictions in this test
+        (0, 99, datetime.min, None, {}, set(), [1, 5, 4, 2, 3], 5),  # no site_group restrictions in this test
+        (0, 99, datetime.min, None, {1: 2, 2: 4}, set(), [5, 4, 3], 3),
+        (0, 99, datetime.min, None, {1: 2, 2: 4}, {2, 4, 99}, [1, 5, 4, 2, 3], 5),
+        (0, 99, datetime.min, None, {1: 2, 2: 4}, {2, 99}, [1, 5, 4, 3], 4),
+        (0, 99, datetime.min, 1, {}, set(), [1, 2, 3], 3),
+        (0, 99, datetime.min, 2, {}, set(), [], 0),
+        (0, 99, datetime.min, 3, {}, set(), [4], 1),
+        (1, 2, datetime.min, None, {}, set(), [5, 4], 5),
+        (1, 1, datetime.min, 1, {}, set(), [2], 3),
+        (99, 99, datetime.min, None, {}, set(), [], 5),
+        (0, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=UTC), None, {}, set(), [1, 5, 4, 2, 3], 5),
+        (3, 99, datetime(2021, 4, 5, 10, 1, 0, tzinfo=UTC), None, {}, set(), [2, 3], 5),
+        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=UTC), None, {}, set(), [5, 4, 2, 3], 4),
+        (0, 99, datetime(2021, 4, 5, 10, 3, 0, tzinfo=UTC), None, {}, set(), [5, 4, 3], 3),
+        (0, 99, datetime(2021, 4, 5, 10, 4, 0, tzinfo=UTC), None, {}, set(), [5, 4], 2),
+        (0, 99, datetime(2021, 4, 5, 10, 5, 0, tzinfo=UTC), None, {}, set(), [], 0),
+        (0, 99, datetime(2021, 4, 5, 10, 2, 0, tzinfo=UTC), 1, {}, set(), [2, 3], 2),
     ],
 )
 @pytest.mark.anyio
@@ -627,6 +634,8 @@ async def test_select_and_count_site_control_groups(
     limit: int | None,
     changed_after: datetime,
     fsa_id: int | None,
+    scg_restrictions: dict[int, int],
+    site_group_ids: set[int],
     expected_ids: list[int],
     expected_count: int,
 ):
@@ -640,15 +649,25 @@ async def test_select_and_count_site_control_groups(
         3: Decimal("20.20"),
     }
 
+    # Rewrite the site control groups required_site_group_id - initially they are all NULL
+    async with generate_async_session(extra_site_control_groups) as session:
+        for scg_id, site_group_id in scg_restrictions.items():
+            await session.execute(
+                update(SiteControlGroup)
+                .values(required_site_group_id=site_group_id)
+                .where(SiteControlGroup.site_control_group_id == scg_id)
+            )
+        await session.commit()
+
     for include_defaults in [True, False]:
         async with generate_async_session(extra_site_control_groups) as session:
             actual_groups = await select_site_control_groups(
-                session, start, changed_after, limit, fsa_id, include_defaults=include_defaults
+                session, start, changed_after, limit, fsa_id, site_group_ids, include_defaults=include_defaults
             )
             assert expected_ids == [e.site_control_group_id for e in actual_groups]
             assert_list_type(SiteControlGroup, actual_groups, len(expected_ids))
 
-            actual_count = await count_site_control_groups(session, changed_after, fsa_id)
+            actual_count = await count_site_control_groups(session, changed_after, site_group_ids, fsa_id)
             assert isinstance(actual_count, int)
             assert actual_count == expected_count
 
@@ -721,3 +740,60 @@ async def test_select_site_control_group_fsa_ids(
         actual_ids = await select_site_control_group_fsa_ids(session, changed_after)
         assert_list_type(int, actual_ids, len(expected_fsa_ids))
         assert set(expected_fsa_ids) == set(actual_ids)
+
+
+@pytest.fixture
+async def site_control_group_with_required_site_group(pg_base_config):
+    """Adds a SiteControlGroup (id 6) whose required_site_group_id is set to site2's singleton group (id 4) -
+    only site2 should be able to "see" this group"""
+    async with generate_async_session(pg_base_config) as session:
+        session.add(
+            generate_class_instance(
+                SiteControlGroup,
+                seed=606,
+                site_control_group_id=6,
+                primacy=99,
+                fsa_id=None,
+                display_id=None,
+                required_site_group_id=4,
+                changed_time=datetime(2021, 4, 5, 10, 6, 0, 500000, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+    yield pg_base_config
+
+
+@pytest.mark.parametrize(
+    "site_group_ids, expected_visible",
+    [
+        (None, True),  # No site scope (eg admin) - always visible
+        ({4}, True),  # has site_group 4
+        ({1, 4, 99}, True),  # has site_group 4
+        ({1, 2}, False),  # lacks site group 4
+        (set(), False),  # lacks site group 4
+        ({99, 1}, False),  # lacks site group 4
+    ],
+)
+@pytest.mark.anyio
+async def test_select_site_control_group_by_id_required_site_group_id_filtering(
+    pg_base_config, site_group_ids: set[int] | None, expected_visible: bool
+):
+    async with generate_async_session(pg_base_config) as session:
+        session.add(
+            generate_class_instance(
+                SiteControlGroup,
+                seed=101,
+                optional_is_none=True,
+                site_control_group_id=6,
+                required_site_group_id=4,
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        result = await select_site_control_group_by_id(session, 6, site_group_ids=site_group_ids)
+        if expected_visible:
+            assert result is not None
+            assert result.site_control_group_id == 6
+        else:
+            assert result is None
