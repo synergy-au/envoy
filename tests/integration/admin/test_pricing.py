@@ -22,12 +22,12 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentCreateUri,
     TariffComponentListUri,
     TariffComponentUpdateUri,
-    TariffCreateUri,
     TariffGeneratedRateCreateUri,
-    TariffGeneratedRateRangeUri,
     TariffGeneratedRateUpdateUri,
+    TariffListUri,
     TariffUpdateUri,
 )
+from envoy_schema.server.schema.sep2.types import CurrencyCode
 from httpx import AsyncClient
 from sqlalchemy import func, select, update
 

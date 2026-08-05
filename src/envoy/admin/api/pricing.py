@@ -16,9 +16,9 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentCreateUri,
     TariffComponentListUri,
     TariffComponentUpdateUri,
-    TariffCreateUri,
     TariffGeneratedRateCreateUri,
     TariffGeneratedRateUpdateUri,
+    TariffListUri,
     TariffUpdateUri,
 )
 from fastapi import APIRouter, Query, Response
@@ -60,7 +60,7 @@ async def get_all_tariffs(
     if group is not None and len(group) > 0:
         group_filter = group[0]
 
-    return await TariffListManager.fetch_many_tariffs(
+    return await TariffManager.fetch_many_tariffs(
         db.session,
         start=extract_start_from_paging_param(start),
         limit=extract_limit_from_paging_param(limit),

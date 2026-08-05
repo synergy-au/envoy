@@ -19,16 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
-    count_all_tariffs,
     insert_many_tariff_genrate,
     insert_single_tariff,
-    select_all_tariffs_for_group,
     select_single_tariff_generated_rate,
     select_tariff_components_for_tariff,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
     update_single_tariff_component,
 )
+from envoy.admin.crud.site_group import fetch_site_group_id_restrictions
 from envoy.admin.mapper.pricing import (
     TariffComponentMapper,
     TariffGeneratedRateListMapper,
@@ -39,6 +38,7 @@ from envoy.server.crud.pricing import (
     select_all_tariffs,
     select_single_tariff,
     select_tariff_component_by_id,
+    select_tariff_count,
 )
 from envoy.server.manager.time import utc_now
 from envoy.server.model.subscription import SubscriptionResource
@@ -90,8 +90,20 @@ class TariffManager:
 
         group_filter: If specified - only include tariffs that are globally visible or whose required_site_group
             references a SiteGroup with this name"""
-        tariff_count = await count_all_tariffs(session, group_filter)
-        tariff_list = await select_all_tariffs_for_group(session, group_filter, start, limit)
+
+        site_group_restrictions = await fetch_site_group_id_restrictions(session, site_id=None, group_name=group_filter)
+
+        tariff_count = await select_tariff_count(
+            session, datetime.min, fsa_id=None, site_group_ids=site_group_restrictions
+        )
+        tariff_list = await select_all_tariffs(
+            session,
+            start=start,
+            limit=limit,
+            changed_after=datetime.min,
+            fsa_id=None,
+            site_group_ids=site_group_restrictions,
+        )
         return TariffMapper.map_to_page_response(
             total_count=tariff_count, limit=limit, start=start, group=group_filter, tariffs=tariff_list
         )

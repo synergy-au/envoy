@@ -163,17 +163,19 @@ class TariffGeneratedRateListMapper:
         tariff_component_id: int,
         start: int,
         limit: int,
-        period_start: datetime,
-        period_end: datetime,
+        start_time_since: datetime | None,
+        start_time_until: datetime | None,
         site_id: int | None,
+        group: str | None,
     ) -> TariffGeneratedRatePageResponse:
         return TariffGeneratedRatePageResponse(
             total_count=total_count,
             limit=limit,
             start=start,
             tariff_component_id=tariff_component_id,
-            period_start=period_start,
-            period_end=period_end,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
             site_id=site_id,
+            group=group,
             rates=[TariffGeneratedRateListMapper.map_to_single_rate_response(r) for r in rates],
         )
