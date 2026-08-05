@@ -9,6 +9,7 @@ from envoy_schema.admin.schema.pricing import (
     TariffComponentResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -18,8 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
+    count_all_tariffs,
     insert_many_tariff_genrate,
     insert_single_tariff,
+    select_all_tariffs_for_group,
     select_single_tariff_generated_rate,
     select_tariff_components_for_tariff,
     select_tariff_ids_for_component_ids,
@@ -80,10 +83,18 @@ class TariffManager:
         return TariffMapper.map_to_response(tariff)
 
     @staticmethod
-    async def fetch_many_tariffs(session: AsyncSession, start: int, limit: int) -> list[TariffResponse]:
-        """Select many tariff entries from the DB and map to a list of TariffResponse objects"""
-        tariff_list = await select_all_tariffs(session, start, datetime.min, limit, None)
-        return [TariffMapper.map_to_response(t) for t in tariff_list]
+    async def fetch_many_tariffs(
+        session: AsyncSession, start: int, limit: int, group_filter: str | None
+    ) -> TariffPageResponse:
+        """Select many tariff entries from the DB and map to a TariffPageResponse.
+
+        group_filter: If specified - only include tariffs that are globally visible or whose required_site_group
+            references a SiteGroup with this name"""
+        tariff_count = await count_all_tariffs(session, group_filter)
+        tariff_list = await select_all_tariffs_for_group(session, group_filter, start, limit)
+        return TariffMapper.map_to_page_response(
+            total_count=tariff_count, limit=limit, start=start, group=group_filter, tariffs=tariff_list
+        )
 
 
 class TariffComponentManager:

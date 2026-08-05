@@ -4,12 +4,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from assertical.asserts.generator import assert_class_instance_equality
+from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -202,3 +204,17 @@ def test_tariff_genrate_mapper_to_page_response_no_site_filter():
     assert page.site_id is None
     assert page.rates == []
     assert page.total_count == 0
+
+
+@pytest.mark.parametrize("group", [None, "", "Group-1"])
+def test_tariff_mapper_map_to_page_response(group: str | None):
+    tariffs = [generate_class_instance(Tariff, seed=1), generate_class_instance(Tariff, seed=2)]
+    result = TariffMapper.map_to_page_response(total_count=123, limit=45, start=6, group=group, tariffs=tariffs)
+
+    assert isinstance(result, TariffPageResponse)
+    assert result.total_count == 123
+    assert result.limit == 45
+    assert result.start == 6
+    assert result.group == group
+    assert_list_type(TariffResponse, result.tariffs, count=len(tariffs))
+    assert [t.tariff_id for t in result.tariffs] == [t.tariff_id for t in tariffs]

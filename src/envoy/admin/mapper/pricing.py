@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 
 from envoy_schema.admin.schema.pricing import (
@@ -7,6 +7,7 @@ from envoy_schema.admin.schema.pricing import (
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -44,6 +45,18 @@ class TariffMapper:
             ),
             primacy=tariff.primacy,
             required_site_group_id=tariff.required_site_group_id,
+        )
+
+    @staticmethod
+    def map_to_page_response(
+        total_count: int, limit: int, start: int, group: str | None, tariffs: Iterable[Tariff]
+    ) -> TariffPageResponse:
+        return TariffPageResponse(
+            total_count=total_count,
+            limit=limit,
+            start=start,
+            group=group,
+            tariffs=[TariffMapper.map_to_response(t) for t in tariffs],
         )
 
 

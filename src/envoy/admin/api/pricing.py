@@ -8,6 +8,7 @@ from envoy_schema.admin.schema.pricing import (
     TariffComponentResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -30,29 +31,41 @@ from envoy.admin.manager.pricing import (
     TariffManager,
 )
 from envoy.server.api.error_handler import LoggedHttpException
+from envoy.server.api.request import extract_limit_from_paging_param, extract_start_from_paging_param
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get(TariffCreateUri, status_code=HTTPStatus.OK, response_model=list[TariffResponse])
+@router.get(TariffListUri, status_code=HTTPStatus.OK, response_model=TariffPageResponse)
 async def get_all_tariffs(
     start: list[int] = Query([0]),
     limit: list[int] = Query([5]),
-) -> list[TariffResponse]:
-    """Endpoint for a paginated list of TariffResponse Objects, ordered by changed_time datetime attribute (descending).
-
+    group: list[str] = Query([]),
+) -> TariffPageResponse:
+    """Endpoint for a paginated list of TariffResponse Objects, ordered by tariff_id attribute (descending).
 
     Query Param:
-        start: list query parameter for the start index value. Default 0.
-        limit: list query parameter for the maximum number of objects to return. Default 5.
+        start: start index value (for pagination). Default 0.
+        limit: maximum number of objects to return. Default 5. Max 500.
+        group: SiteGroup name by which to filter returned tariffs (matches Tariff.required_site_group_id against
+            the named SiteGroup OR any Tariff with a null required_site_group_id). Default no filter
 
     Returns:
-        List[TariffResponse]
+        TariffPageResponse
 
     """
-    return await TariffManager.fetch_many_tariffs(db.session, start[0], limit[0])
+    group_filter: str | None = None
+    if group is not None and len(group) > 0:
+        group_filter = group[0]
+
+    return await TariffListManager.fetch_many_tariffs(
+        db.session,
+        start=extract_start_from_paging_param(start),
+        limit=extract_limit_from_paging_param(limit),
+        group_filter=group_filter,
+    )
 
 
 @router.get(TariffUpdateUri, status_code=HTTPStatus.OK, response_model=TariffResponse)
@@ -67,7 +80,7 @@ async def get_tariff(tariff_id: int) -> TariffResponse:
     return await TariffManager.fetch_tariff(db.session, tariff_id)
 
 
-@router.post(TariffCreateUri, status_code=HTTPStatus.CREATED, response_model=None)
+@router.post(TariffListUri, status_code=HTTPStatus.CREATED, response_model=None)
 async def create_tariff(tariff: TariffRequest, response: Response) -> BatchCreateResponse:
     """Creates a singular tariff. The location (/tariff/{tariff_id}) of the created resource is provided in the
     'Location' header of the response.

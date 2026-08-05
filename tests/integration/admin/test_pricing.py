@@ -14,6 +14,7 @@ from envoy_schema.admin.schema.pricing import (
     TariffComponentResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -28,19 +29,53 @@ from envoy_schema.admin.schema.uri import (
     TariffUpdateUri,
 )
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from envoy.server.model.archive.tariff import ArchiveTariff, ArchiveTariffComponent, ArchiveTariffGeneratedRate
-from envoy.server.model.tariff import TariffComponent, TariffGeneratedRate
+from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from tests.integration.response import read_response_body_string
 
 
 @pytest.mark.anyio
 async def test_get_all_tariffs(admin_client_auth: AsyncClient):
-    resp = await admin_client_auth.get(TariffCreateUri, params={"limit": 3})
+    resp = await admin_client_auth.get(TariffListUri, params={"limit": 3})
     assert resp.status_code == HTTPStatus.OK
-    tariff_resp_list = [TariffResponse(**d) for d in json.loads(resp.content)]
-    assert len(tariff_resp_list) == 3
+    tariff_page = TariffPageResponse(**json.loads(resp.content))
+    assert len(tariff_page.tariffs) == 3
+    assert tariff_page.limit == 3
+    assert tariff_page.start == 0
+    assert tariff_page.group is None
+    assert tariff_page.total_count == 3
+
+
+@pytest.mark.parametrize(
+    "group, expected_tariff_ids",
+    [
+        (None, [3, 2, 1]),
+        ("Group-1", [3, 1]),  # tariff 1 scoped to Group-1, tariff 3 globally visible
+        ("Group-2", [3, 2]),  # tariff 2 scoped to Group-2, tariff 3 globally visible
+        ("Group-3", [3]),  # only the globally visible tariff
+        ("Group-DNE", [3]),  # only the globally visible tariff
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_tariffs_group_filter(
+    admin_client_auth: AsyncClient, pg_base_config, group: str | None, expected_tariff_ids: list[int]
+):
+    """Sanity check that the "group" query param filters tariffs against their required_site_group (or null)"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(update(Tariff).where(Tariff.tariff_id == 1).values(required_site_group_id=1))
+        await session.execute(update(Tariff).where(Tariff.tariff_id == 2).values(required_site_group_id=2))
+        await session.commit()
+
+    params = {} if group is None else {"group": group}
+    resp = await admin_client_auth.get(TariffListUri, params=params)
+    assert resp.status_code == HTTPStatus.OK
+    tariff_page = TariffPageResponse(**json.loads(resp.content))
+
+    assert tariff_page.group == group
+    assert tariff_page.total_count == len(expected_tariff_ids)
+    assert expected_tariff_ids == [t.tariff_id for t in tariff_page.tariffs]
 
 
 @pytest.mark.anyio
@@ -55,7 +90,8 @@ async def test_get_single_tariff(admin_client_auth: AsyncClient):
 async def test_create_tariff_with_fetch(admin_client_auth: AsyncClient):
     """Can we create a Tariff and then refetch the thing we just created"""
     tariff = generate_class_instance(TariffRequest, required_site_group_id=None)
-    resp = await admin_client_auth.post(TariffCreateUri, json=tariff.model_dump())
+    tariff.currency_code = CurrencyCode.AUSTRALIAN_DOLLAR
+    resp = await admin_client_auth.post(TariffListUri, json=tariff.model_dump())
 
     assert resp.status_code == HTTPStatus.CREATED
 
