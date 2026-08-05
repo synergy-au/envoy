@@ -475,7 +475,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'" },
     { name = "cryptography" },
     { name = "defusedxml", marker = "extra == 'test'" },
-    { name = "envoy-schema", specifier = "==2.3.2" },
+    { name = "envoy-schema", specifier = "==2.3.3" },
     { name = "fastapi", specifier = ">=0.94.1,<0.137" },
     { name = "fastapi-async-sqlalchemy" },
     { name = "freezegun", marker = "extra == 'test'" },
@@ -511,15 +511,15 @@ provides-extras = ["dev", "test"]
 
 [[package]]
 name = "envoy-schema"
-version = "2.3.2"
+version = "2.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-xml", extra = ["lxml"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/03/5d/a3b356dd6e85df4d8c85f434532df4befbcced4c15e82797ac6db927c259/envoy_schema-2.3.2.tar.gz", hash = "sha256:112caf143ea4acc9f5d8bb25424b4eb4935ef1d332f942efe86cbc5eff86c5e2", size = 42310, upload-time = "2026-07-29T00:32:18.947Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/c1/044e82633b6aa38f87409654798067a9fe10a14189151842887ee9388e73/envoy_schema-2.3.3.tar.gz", hash = "sha256:550f573e371c8311361059bdb1f1c67f679b6c80128bd0713e69a9fbabc8e196", size = 42516, upload-time = "2026-07-29T05:58:26.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/5b/ff73c8239547ff705df70cc07cf4f963f600819d63bc06708c81bd63bdfe/envoy_schema-2.3.2-py3-none-any.whl", hash = "sha256:a3301f88b90f544c18619e68119fd7a759a97c3f75d4e5237fab4826b036b89a", size = 54210, upload-time = "2026-07-29T00:32:17.576Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/e7/a845159f86b279d8e72cf896a042ef1875425059855972994a6d57c274ef/envoy_schema-2.3.3-py3-none-any.whl", hash = "sha256:a55b7be30dbd50936ebca4c2f447c1d4d4782af2c5f532702d33af7720ecd6a6", size = 54402, upload-time = "2026-07-29T05:58:25.207Z" },
 ]
 
 [[package]]
