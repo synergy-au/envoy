@@ -1,7 +1,7 @@
 """site_group_archive
 
-Revision ID: 655e16192ee0
-Revises: 221e711a4555
+Revision ID: b7e50bccd7aa
+Revises: 38126fedbab1
 Create Date: 2026-07-29 16:49:34.195082
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "655e16192ee0"
-down_revision = "221e711a4555"
+revision = "b7e50bccd7aa"
+down_revision = "38126fedbab1"
 branch_labels = None
 depends_on = None
 
