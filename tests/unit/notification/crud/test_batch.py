@@ -962,15 +962,15 @@ async def test_fetch_rates_by_timestamp_required_site_group_id(pg_base_config):
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
-        batch = await fetch_rates_by_changed_at(session, timestamp)
-        assert_batched_entities(
-            batch,
-            SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
-            ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
-            0,
-            0,
-        )
-        assert len(batch.models_by_batch_key) == 0
+        for batch in await fetch_rates_by_changed_at(session, timestamp):
+            assert_batched_entities(
+                batch,
+                SiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                ArchiveSiteScopedTariffGeneratedRate,  # ty:ignore[invalid-argument-type]
+                0,
+                0,
+            )
+            assert len(batch.models_by_batch_key) == 0
 
 
 @pytest.mark.anyio
@@ -987,11 +987,14 @@ async def test_fetch_rates_by_timestamp_required_site_group_id_allows_member(pg_
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
-        batch = await fetch_rates_by_changed_at(session, timestamp)
-        list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
-        assert len(list_entities) == 1
-        assert list_entities[0].site_id == 1
-        assert list_entities[0].aggregator_id == 1
+        batches = await fetch_rates_by_changed_at(session, timestamp)
+        assert_list_type(AggregatorBatchedEntities, batches, count=2)
+
+        for batch in batches:
+            list_entities = [e for _, entities in batch.models_by_batch_key.items() for e in entities]
+            assert len(list_entities) == 1
+            assert list_entities[0].site_id == 1
+            assert list_entities[0].aggregator_id == 1
 
 
 @pytest.mark.parametrize(

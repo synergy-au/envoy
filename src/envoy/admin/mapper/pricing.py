@@ -43,6 +43,7 @@ class TariffMapper:
                 tariff.price_power_of_ten_multiplier if tariff.price_power_of_ten_multiplier else 0
             ),
             primacy=tariff.primacy,
+            required_site_group_id=tariff.required_site_group_id,
         )
 
 

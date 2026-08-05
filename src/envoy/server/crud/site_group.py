@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.server.model.site import Site, SiteGroup, SiteGroupAssignment

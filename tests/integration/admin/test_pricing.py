@@ -76,8 +76,13 @@ async def test_create_tariff_with_fetch(admin_client_auth: AsyncClient):
 @pytest.mark.parametrize(
     "tariff_id, new_values, expected_status",
     [
-        (1, generate_class_instance(TariffRequest), HTTPStatus.NO_CONTENT),
-        (3, generate_class_instance(TariffRequest, optional_is_none=True), HTTPStatus.NO_CONTENT),
+        (1, generate_class_instance(TariffRequest, required_site_group_id=3), HTTPStatus.NO_CONTENT),
+        (1, generate_class_instance(TariffRequest, required_site_group_id=99), HTTPStatus.BAD_REQUEST),  # fk mismatch
+        (
+            3,
+            generate_class_instance(TariffRequest, required_site_group_id=4, optional_is_none=True),
+            HTTPStatus.NO_CONTENT,
+        ),
         (99, generate_class_instance(TariffRequest), HTTPStatus.NOT_FOUND),
     ],
 )
