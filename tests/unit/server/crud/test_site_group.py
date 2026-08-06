@@ -5,7 +5,10 @@ from assertical.asserts.type import assert_set_type
 from assertical.fixtures.postgres import generate_async_session
 from sqlalchemy import select, update
 
-from envoy.server.crud.site_group import assign_default_site_groups_to_site, fetch_site_group_membership
+from envoy.server.crud.site_group import (
+    assign_default_site_groups_to_site,
+    fetch_site_group_membership,
+)
 from envoy.server.model.site import SiteGroup, SiteGroupAssignment
 
 CHANGED_TIME = datetime(2024, 11, 1, 2, 3, 4, tzinfo=UTC)

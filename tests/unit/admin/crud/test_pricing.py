@@ -11,8 +11,10 @@ from sqlalchemy import func, select
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
+    count_filtered_tariff_generated_rates,
     insert_many_tariff_genrate,
     insert_single_tariff,
+    select_filtered_tariff_generated_rates,
     select_single_tariff_generated_rate,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
@@ -400,3 +402,82 @@ async def test_cancel_and_delete_tariff_component(
             assert len(archive_rates) == len(expected_deleted_prices)
             assert sorted(expected_deleted_prices) == sorted([a.price_pow10_encoded for a in archive_rates])
             assert all([a.deleted_time == deleted_time for a in archive_rates])
+
+
+@pytest.mark.parametrize(
+    "tariff_component_id,start_time_since,start_time_until,site_group_ids,start,limit,expected_ids,expected_count",
+    [
+        (1, None, None, None, 0, 99, [1, 2, 3, 4, 5], 5),
+        (1, None, None, None, 1, 2, [2, 3], 5),  # paging
+        (2, None, None, None, 0, 100, [6], 1),
+        (3, None, None, None, 0, 100, [], 0),
+        (1, datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC), None, 0, 100, [], 0),
+        (
+            1,
+            datetime(2000, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            None,
+            0,
+            100,
+            [1, 2, 3, 4, 5],
+            5,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            None,
+            0,
+            100,
+            [1, 2, 4, 5],
+            4,
+        ),
+        (1, None, None, {1, 2, 99}, 0, 99, [1, 2, 3], 3),
+        (1, None, None, {1, 99}, 0, 99, [], 0),
+        (1, None, None, set(), 0, 99, [], 0),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            {1, 2},
+            0,
+            100,
+            [1, 2],
+            2,
+        ),
+        (99, None, None, None, 0, 99, [], 0),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_count_filtered_tariff_generated_rates(
+    pg_base_config,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+    start: int,
+    limit: int,
+    expected_ids: list[int],
+    expected_count: int,
+):
+    async with generate_async_session(pg_base_config) as session:
+        actual_rates = await select_filtered_tariff_generated_rates(
+            session,
+            tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            site_group_ids=site_group_ids,
+            start=start,
+            limit=limit,
+        )
+        actual_count = await count_filtered_tariff_generated_rates(
+            session,
+            tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            site_group_ids=site_group_ids,
+        )
+
+        assert expected_ids == [r.tariff_generated_rate_id for r in actual_rates]
+        assert_list_type(TariffGeneratedRate, actual_rates, count=len(expected_ids))
+        assert actual_count == expected_count

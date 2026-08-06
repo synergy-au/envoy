@@ -4,12 +4,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from assertical.asserts.generator import assert_class_instance_equality
+from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -160,27 +162,30 @@ def test_tariff_genrate_mapper_to_page_response():
     tc_id = 1
     rate1 = generate_class_instance(TariffGeneratedRate, tariff_component_id=tc_id, seed=1)
     rate2 = generate_class_instance(TariffGeneratedRate, tariff_component_id=tc_id, seed=2)
-    period_start = datetime(2022, 1, 1, tzinfo=UTC)
-    period_end = datetime(2022, 1, 2, tzinfo=UTC)
+    since = datetime(2022, 1, 1, tzinfo=UTC)
+    until = datetime(2022, 1, 2, tzinfo=UTC)
+    group = "abc 123"
 
     page = TariffGeneratedRateListMapper.map_to_page_response(
         total_count=42,
         rates=[rate1, rate2],
         start=5,
         limit=10,
-        period_start=period_start,
-        period_end=period_end,
+        start_time_since=since,
+        start_time_until=until,
         site_id=7,
         tariff_component_id=tc_id,
+        group=group,
     )
 
     assert isinstance(page, TariffGeneratedRatePageResponse)
     assert page.total_count == 42
     assert page.start == 5
     assert page.limit == 10
-    assert page.period_start == period_start
-    assert page.period_end == period_end
+    assert page.start_time_since == since
+    assert page.start_time_until == until
     assert page.site_id == 7
+    assert page.group == group
     assert len(page.rates) == 2
     assert page.rates[0].tariff_generated_rate_id == rate1.tariff_generated_rate_id
     assert page.rates[1].tariff_generated_rate_id == rate2.tariff_generated_rate_id
@@ -193,12 +198,27 @@ def test_tariff_genrate_mapper_to_page_response_no_site_filter():
         rates=[],
         start=0,
         limit=100,
-        period_start=datetime(2022, 1, 1, tzinfo=UTC),
-        period_end=datetime(2022, 1, 2, tzinfo=UTC),
+        start_time_since=datetime(2022, 1, 1, tzinfo=UTC),
+        start_time_until=datetime(2022, 1, 2, tzinfo=UTC),
         site_id=None,
+        group=None,
         tariff_component_id=1,
     )
 
     assert page.site_id is None
     assert page.rates == []
     assert page.total_count == 0
+
+
+@pytest.mark.parametrize("group", [None, "", "Group-1"])
+def test_tariff_mapper_map_to_page_response(group: str | None):
+    tariffs = [generate_class_instance(Tariff, seed=1), generate_class_instance(Tariff, seed=2)]
+    result = TariffMapper.map_to_page_response(total_count=123, limit=45, start=6, group=group, tariffs=tariffs)
+
+    assert isinstance(result, TariffPageResponse)
+    assert result.total_count == 123
+    assert result.limit == 45
+    assert result.start == 6
+    assert result.group == group
+    assert_list_type(TariffResponse, result.tariffs, count=len(tariffs))
+    assert [t.tariff_id for t in result.tariffs] == [t.tariff_id for t in tariffs]

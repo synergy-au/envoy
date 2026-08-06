@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from http import HTTPStatus
 
 from asyncpg.exceptions import CardinalityViolationError
@@ -6,8 +7,10 @@ from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
+    TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -15,9 +18,10 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentCreateUri,
     TariffComponentListUri,
     TariffComponentUpdateUri,
-    TariffCreateUri,
     TariffGeneratedRateCreateUri,
+    TariffGeneratedRateListUri,
     TariffGeneratedRateUpdateUri,
+    TariffListUri,
     TariffUpdateUri,
 )
 from fastapi import APIRouter, Query, Response
@@ -30,29 +34,41 @@ from envoy.admin.manager.pricing import (
     TariffManager,
 )
 from envoy.server.api.error_handler import LoggedHttpException
+from envoy.server.api.request import MAX_LIMIT, extract_limit_from_paging_param, extract_start_from_paging_param
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get(TariffCreateUri, status_code=HTTPStatus.OK, response_model=list[TariffResponse])
+@router.get(TariffListUri, status_code=HTTPStatus.OK, response_model=TariffPageResponse)
 async def get_all_tariffs(
     start: list[int] = Query([0]),
     limit: list[int] = Query([5]),
-) -> list[TariffResponse]:
-    """Endpoint for a paginated list of TariffResponse Objects, ordered by changed_time datetime attribute (descending).
-
+    group: list[str] = Query([]),
+) -> TariffPageResponse:
+    """Endpoint for a paginated list of TariffResponse Objects, ordered by tariff_id attribute (descending).
 
     Query Param:
-        start: list query parameter for the start index value. Default 0.
-        limit: list query parameter for the maximum number of objects to return. Default 5.
+        start: start index value (for pagination). Default 0.
+        limit: maximum number of objects to return. Default 5. Max 500.
+        group: SiteGroup name by which to filter returned tariffs (matches Tariff.required_site_group_id against
+            the named SiteGroup OR any Tariff with a null required_site_group_id). Default no filter
 
     Returns:
-        List[TariffResponse]
+        TariffPageResponse
 
     """
-    return await TariffManager.fetch_many_tariffs(db.session, start[0], limit[0])
+    group_filter: str | None = None
+    if group is not None and len(group) > 0:
+        group_filter = group[0]
+
+    return await TariffManager.fetch_many_tariffs(
+        db.session,
+        start=extract_start_from_paging_param(start),
+        limit=extract_limit_from_paging_param(limit),
+        group_filter=group_filter,
+    )
 
 
 @router.get(TariffUpdateUri, status_code=HTTPStatus.OK, response_model=TariffResponse)
@@ -67,7 +83,7 @@ async def get_tariff(tariff_id: int) -> TariffResponse:
     return await TariffManager.fetch_tariff(db.session, tariff_id)
 
 
-@router.post(TariffCreateUri, status_code=HTTPStatus.CREATED, response_model=None)
+@router.post(TariffListUri, status_code=HTTPStatus.CREATED, response_model=None)
 async def create_tariff(tariff: TariffRequest, response: Response) -> BatchCreateResponse:
     """Creates a singular tariff. The location (/tariff/{tariff_id}) of the created resource is provided in the
     'Location' header of the response.
@@ -264,3 +280,47 @@ async def delete_tariff_genrate(tariff_generated_rate_id: int) -> None:
         return await TariffGeneratedRateManager.cancel_tariff_generated_rate(db.session, tariff_generated_rate_id)
     except NoResultFound as exc:
         raise LoggedHttpException(logger, exc, HTTPStatus.NOT_FOUND, "Not found") from exc
+
+
+@router.get(
+    TariffGeneratedRateListUri,
+    status_code=HTTPStatus.OK,
+    response_model=TariffGeneratedRatePageResponse,
+)
+async def get_tariff_genrates_for_component(
+    tariff_component_id: int,
+    start: int = Query(0),
+    limit: int = Query(MAX_LIMIT),
+    group: str | None = Query(None),
+    start_time_since: datetime | None = Query(None),
+    start_time_until: datetime | None = Query(None),
+    site_id: int | None = Query(None),
+) -> TariffGeneratedRatePageResponse:
+    """List all TariffGeneratedRate belonging to a TariffComponent, ordered by tariff_generated_rate_id and optionally
+    filtered.
+
+    Path Param:
+        tariff_component_id: integer ID of the parent tariff component.
+
+    Query Param:
+        start: start index value (for pagination). Default 0.
+        limit: maximum number of objects to return. Default 5. Max 500.
+        group: SiteGroup name by which to filter returned tariffs (matches TariffGeneratedRate.site_group_id)
+        start_time_since: Filter on start_time for the returned rates (lowest allowed value - Inclusive)
+        start_time_until: Filter on start_time for the returned rates (highed allowed value - Exclusive)
+        site_id: If set - only return rates whose site_group_id contains site_id as a member
+
+    Returns:
+        list[TariffComponentResponse]
+    """
+
+    return await TariffGeneratedRateManager.fetch_tariff_genrates(
+        db.session,
+        tariff_component_id=tariff_component_id,
+        start=start,
+        limit=limit,
+        group=group,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_id=site_id,
+    )

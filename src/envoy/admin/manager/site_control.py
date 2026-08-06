@@ -23,6 +23,7 @@ from envoy.admin.crud.doe import (
     select_all_site_control_groups,
     supersede_then_insert_does,
 )
+from envoy.admin.crud.site_group import fetch_site_group_id_restrictions
 from envoy.admin.mapper.site_control import SiteControlGroupListMapper, SiteControlListMapper
 from envoy.notification.manager.notification import NotificationManager
 from envoy.server.crud.archive import copy_rows_into_archive
@@ -150,15 +151,30 @@ class SiteControlGroupManager:
 
     @staticmethod
     async def get_all_site_control_groups(
-        session: AsyncSession, start: int, limit: int, changed_after: datetime | None
+        session: AsyncSession,
+        start: int,
+        limit: int,
+        changed_after: datetime | None,
+        group_filter: str | None = None,
     ) -> SiteControlGroupPageResponse:
-        """Fetches a page of SiteControlGroup instances"""
+        """Fetches a page of SiteControlGroup instances
 
-        groups = await select_all_site_control_groups(session, start, limit, changed_after)
-        group_count = await count_all_site_control_groups(session, changed_after)
+        group_filter: If specified - filter to groups that are globally visible or whose required_site_group
+            references a SiteGroup with this name"""
+
+        site_group_id_restrictions = await fetch_site_group_id_restrictions(
+            session, site_id=None, group_name=group_filter
+        )
+
+        groups = await select_all_site_control_groups(
+            session, start, limit, changed_after, site_group_ids=site_group_id_restrictions
+        )
+        group_count = await count_all_site_control_groups(
+            session, changed_after, site_group_ids=site_group_id_restrictions
+        )
 
         return SiteControlGroupListMapper.map_to_paged_response(
-            total_count=group_count, limit=limit, start=start, after=changed_after, groups=groups
+            total_count=group_count, limit=limit, start=start, after=changed_after, group=group_filter, groups=groups
         )
 
     @staticmethod
@@ -302,22 +318,52 @@ class SiteControlListManager:
 
     @staticmethod
     async def get_all_site_controls(
-        session: AsyncSession, site_control_group_id: int, start: int, limit: int, changed_after: datetime | None
+        session: AsyncSession,
+        site_control_group_id: int,
+        start: int,
+        limit: int,
+        changed_after: datetime | None,
+        group_filter: str | None = None,
+        start_time_since: datetime | None = None,
+        start_time_until: datetime | None = None,
+        site_id: int | None = None,
     ) -> SiteControlPageResponse:
         """Admin specific (paginated) fetch of site controls that covers all aggregators.
-        changed_after: If specified - filter to does whose changed date is >= this value"""
-        doe_count = await count_all_does(session, site_control_group_id, changed_after)
+        changed_after: If specified - filter to does whose changed date is >= this value
+        group_filter: If specified - filter to does whose parent SiteControlGroup is globally visible or whose
+            required_site_group references a SiteGroup with this name
+        start_time_since: If specified - filter to does with start_time >= this value
+        start_time_until: If specified - filter to does with start_time < this value
+        site_id: If specified - filter to does whose target SiteGroup counts site_id as a member"""
+
+        site_group_filter = await fetch_site_group_id_restrictions(session, site_id=site_id, group_name=group_filter)
+
+        doe_count = await count_all_does(
+            session,
+            site_control_group_id,
+            changed_after,
+            site_group_ids=site_group_filter,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+        )
         does = await select_all_does(
             session,
             site_control_group_id=site_control_group_id,
             changed_after=changed_after,
             start=start,
             limit=limit,
+            site_group_ids=site_group_filter,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
         )
         return SiteControlListMapper.map_to_paged_response(
             total_count=doe_count,
             limit=limit,
             start=start,
             after=changed_after,
+            site_id=site_id,
+            group=group_filter,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
             does=does,
         )
