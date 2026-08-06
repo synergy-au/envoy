@@ -7,6 +7,7 @@ from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
+    TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
     TariffPageResponse,
@@ -19,8 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
     cancel_tariff_generated_rate,
+    count_filtered_tariff_generated_rates,
     insert_many_tariff_genrate,
     insert_single_tariff,
+    select_filtered_tariff_generated_rates,
     select_single_tariff_generated_rate,
     select_tariff_components_for_tariff,
     select_tariff_ids_for_component_ids,
@@ -229,3 +232,46 @@ class TariffGeneratedRateManager:
         await session.commit()
 
         return BatchCreateResponse(ids=cast(list[int], insert_ids))
+
+    @staticmethod
+    async def fetch_tariff_genrates(
+        session: AsyncSession,
+        tariff_component_id: int,
+        start: int,
+        limit: int,
+        group: str | None,
+        start_time_since: datetime | None,
+        start_time_until: datetime | None,
+        site_id: int | None,
+    ) -> TariffGeneratedRatePageResponse:
+
+        site_group_ids = await fetch_site_group_id_restrictions(session, site_id=site_id, group_name=group)
+
+        rates = await select_filtered_tariff_generated_rates(
+            session,
+            tariff_component_id=tariff_component_id,
+            site_group_ids=site_group_ids,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            start=start,
+            limit=limit,
+        )
+        count = await count_filtered_tariff_generated_rates(
+            session,
+            tariff_component_id=tariff_component_id,
+            site_group_ids=site_group_ids,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+        )
+
+        return TariffGeneratedRateListMapper.map_to_page_response(
+            total_count=count,
+            limit=limit,
+            start=start,
+            tariff_component_id=tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            group=group,
+            site_id=site_id,
+            rates=rates,
+        )

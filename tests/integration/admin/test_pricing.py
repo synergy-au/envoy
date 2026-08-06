@@ -1,17 +1,20 @@
 import json
 from datetime import UTC, datetime
 from http import HTTPStatus
+from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 import pytest
 from assertical.asserts.generator import assert_class_instance_equality
 from assertical.asserts.time import assert_nowish
+from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
 from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
+    TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
     TariffPageResponse,
@@ -23,6 +26,7 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentListUri,
     TariffComponentUpdateUri,
     TariffGeneratedRateCreateUri,
+    TariffGeneratedRateListUri,
     TariffGeneratedRateUpdateUri,
     TariffListUri,
     TariffUpdateUri,
@@ -453,9 +457,6 @@ async def test_no_update_tariff_genrate(pg_base_config, admin_client_auth: Async
         ).scalar_one() == 0, "This should be an insert - no changes in the archive"
 
 
-# --- Tests for GET /tariff/{tariff_id}/tariff_component ---
-
-
 @pytest.mark.parametrize(
     "tariff_id, expected_status, expected_component_ids",
     [
@@ -484,53 +485,124 @@ async def test_get_tariff_components_for_tariff(
             assert c.tariff_id == tariff_id
 
 
-# --- Tests for GET /tariff_component/{tariff_component_id}/tariff_generated_rate/{period_start}/{period_end} ---
+def build_rate_params(
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    group: str | None,
+    start: int | None,
+    limit: int | None,
+    site_id: int | None,
+) -> str:
+    """Builds up a paging query string in the form of ?start={start}&limit={limit} etc."""
 
-# Base config rates (all start on 2022-03-04 UTC = 2022-03-05 +10):
-# Rate 1: TC=1, site=1, start=2022-03-04T15:00:00Z, duration=11s
-# Rate 2: TC=1, site=1, start=2022-03-04T15:00:11Z, duration=22s
-# Rate 3: TC=1, site=1, start=2022-03-04T15:00:33Z, duration=33s
-# Rate 4: TC=1, site=2, start=2022-03-04T15:00:00Z, duration=44s
-# Rate 5: TC=1, site=3, start=2022-03-04T15:00:00Z, duration=55s
-# Rate 6: TC=2, site=1, start=2022-03-04T15:00:00Z, duration=66s
-# Rate 7: TC=4, site=1, start=2022-03-04T15:00:00Z, duration=77s
+    parts: list[str] = []
+    if start is not None:
+        parts.append(f"start={start}")
+    if limit is not None:
+        parts.append(f"limit={limit}")
+    if start_time_since is not None:
+        parts.append(f"start_time_since={quote_plus(start_time_since.isoformat())}")
+    if start_time_until is not None:
+        parts.append(f"start_time_until={quote_plus(start_time_until.isoformat())}")
+    if group is not None:
+        parts.append(f"group={quote_plus(group)}")
+    if site_id is not None:
+        parts.append(f"site_id={site_id}")
 
-# Period covering all rates
-RATE_PERIOD_START = datetime(2022, 3, 4, 14, 0, 0, tzinfo=UTC)
-RATE_PERIOD_END = datetime(2022, 3, 4, 16, 0, 0, tzinfo=UTC)
-
-# Period with no rates
-RATE_PERIOD_EMPTY_START = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
-RATE_PERIOD_EMPTY_END = datetime(2020, 1, 2, 0, 0, 0, tzinfo=UTC)
-
-# TC#1 rates ordered by (start_time ASC, site_id ASC):
-# rate 1 (site=1, T15:00:00Z), rate 4 (site=2, T15:00:00Z), rate 5 (site=3, T15:00:00Z),
-# rate 2 (site=1, T15:00:11Z), rate 3 (site=1, T15:00:33Z)
-TC1_RATE_IDS_ORDERED = [1, 4, 5, 2, 3]
-
-
-GET_RATE_TEST_CASES = [
-    # (tariff_component_id, start, limit, period_start, period_end, site_id, expected_rate_ids, expected_total)
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, TC1_RATE_IDS_ORDERED, 5),  # TC#1 all rates
-    (2, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [6], 1),  # TC#2 single rate
-    (4, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [7], 1),  # TC#4 single rate
-    (3, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [], 0),  # TC#3 no rates
-    (1, 0, 999, RATE_PERIOD_EMPTY_START, RATE_PERIOD_EMPTY_END, None, [], 0),  # Empty period
-    (1, 0, 2, RATE_PERIOD_START, RATE_PERIOD_END, None, [1, 4], 5),  # Pagination: first page
-    (1, 2, 2, RATE_PERIOD_START, RATE_PERIOD_END, None, [5, 2], 5),  # Pagination: second page
-    (1, 999, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [], 5),  # Pagination: past end
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 1, [1, 2, 3], 3),  # Site filter: site 1
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 2, [4], 1),  # Site filter: site 2
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 999, [], 0),  # Site filter: no match
-]
+    return "?" + "&".join(parts)
 
 
+@pytest.mark.parametrize(
+    "tariff_component_id,start_time_since,start_time_until,group,site_id,start,limit,expected_ids,expected_count",
+    [
+        (99, None, None, None, None, None, 100, [], 0),  # basic filter
+        (1, None, None, None, None, None, 100, [1, 2, 3, 4, 5], 5),  # basic filter
+        (1, None, None, None, None, 1, 2, [2, 3], 5),  # paging
+        (2, None, None, None, None, None, 100, [6], 1),
+        (3, None, None, None, None, None, 100, [], 0),
+        (1, None, None, None, 99, None, 100, [], 0),  # site DNE
+        (1, None, None, None, 1, None, 100, [1, 2, 3], 3),
+        (1, None, None, "Group-2", None, None, 100, [1, 2, 3], 3),
+        (1, None, None, "Group-DNE", None, None, 100, [], 0),
+        (1, datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC), None, None, None, 100, [], 0),
+        (
+            1,
+            datetime(2000, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            None,
+            None,
+            None,
+            100,
+            [1, 2, 3, 4, 5],
+            5,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 11, tzinfo=UTC),
+            None,
+            None,
+            None,
+            0,
+            100,
+            [2, 3],
+            2,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            "Group-2",
+            1,
+            0,
+            100,
+            [1, 2],
+            2,
+        ),
+    ],
+)
 @pytest.mark.anyio
-async def test_get_tariff_generated_rates_unknown_component(admin_client_auth: AsyncClient):
-    """Unknown tariff_component_id returns 404."""
-    url = TariffGeneratedRateRangeUri.format(
-        tariff_component_id=99,
-        period_start=RATE_PERIOD_START.isoformat(),
-        period_end=RATE_PERIOD_END.isoformat(),
+async def test_get_tariff_generated_rates_filtered(
+    admin_client_auth: AsyncClient,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    group: str | None,
+    start: int | None,
+    limit: int | None,
+    site_id: int | None,
+    expected_ids: list[int],
+    expected_count: int,
+):
+    """Tests fetching and filtering tariff rates"""
+    url = TariffGeneratedRateListUri.format(tariff_component_id=tariff_component_id) + build_rate_params(
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        start=start,
+        limit=limit,
+        site_id=site_id,
+        group=group,
     )
-    assert (await admin_client_auth.get(url)).status_code == HTTPStatus.NOT_FOUND
+    resp = await admin_client_auth.get(url)
+    assert resp.status_code == HTTPStatus.OK
+
+    response_page = TariffGeneratedRatePageResponse(**json.loads(resp.content))
+
+    assert response_page.group == group
+    assert response_page.start_time_since == start_time_since
+    assert response_page.start_time_until == start_time_until
+    assert response_page.site_id == site_id
+    assert response_page.tariff_component_id == tariff_component_id
+
+    if limit is None:
+        assert isinstance(response_page.limit, int) and response_page.limit > 0
+    else:
+        assert response_page.limit == limit
+
+    if start is None:
+        assert isinstance(response_page.start, int) and response_page.start == 0
+    else:
+        assert response_page.start == start
+
+    assert response_page.total_count == expected_count
+    assert_list_type(TariffGeneratedRateResponse, response_page.rates, count=len(expected_ids))
+    assert expected_ids == [r.tariff_generated_rate_id for r in response_page.rates]

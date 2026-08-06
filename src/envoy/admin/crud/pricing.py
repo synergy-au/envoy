@@ -1,7 +1,8 @@
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any, TypeVar
 
-from sqlalchemy import insert, select
+from sqlalchemy import Select, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.server.crud.archive import copy_rows_into_archive, delete_rows_into_archive
@@ -125,6 +126,69 @@ async def select_single_tariff_generated_rate(
         select(TariffGeneratedRate).where(TariffGeneratedRate.tariff_generated_rate_id == tariff_generated_rate_id)
     )
     return resp.scalar_one_or_none()
+
+
+T = TypeVar("T", bound=tuple[Any, ...])
+
+
+def _filtered_tariff_generated_rates(
+    stmt: Select[T],
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+) -> Select[T]:
+
+    stmt = stmt.where(TariffGeneratedRate.tariff_component_id == tariff_component_id)
+    if start_time_since is not None:
+        stmt = stmt.where(TariffGeneratedRate.start_time >= start_time_since)
+    if start_time_until is not None:
+        stmt = stmt.where(TariffGeneratedRate.start_time < start_time_until)
+    if site_group_ids is not None:
+        stmt = stmt.where(TariffGeneratedRate.site_group_id.in_(site_group_ids))
+    return stmt
+
+
+async def select_filtered_tariff_generated_rates(
+    session: AsyncSession,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+    start: int,
+    limit: int,
+) -> Sequence[TariffGeneratedRate]:
+    """Fetches TariffGeneratedRate that meet the specified criteria"""
+
+    stmt = select(TariffGeneratedRate).order_by(TariffGeneratedRate.tariff_generated_rate_id).limit(limit).offset(start)
+    stmt = _filtered_tariff_generated_rates(
+        stmt,
+        tariff_component_id=tariff_component_id,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_group_ids=site_group_ids,
+    )
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def count_filtered_tariff_generated_rates(
+    session: AsyncSession,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+) -> int:
+    """Provides the count of records returned from select_filtered_tariff_generated_rates"""
+
+    stmt = select(func.count()).select_from(TariffGeneratedRate)
+    stmt = _filtered_tariff_generated_rates(
+        stmt,
+        tariff_component_id=tariff_component_id,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_group_ids=site_group_ids,
+    )
+    return (await session.execute(stmt)).scalar_one()
 
 
 async def cancel_and_delete_tariff_component(

@@ -162,27 +162,30 @@ def test_tariff_genrate_mapper_to_page_response():
     tc_id = 1
     rate1 = generate_class_instance(TariffGeneratedRate, tariff_component_id=tc_id, seed=1)
     rate2 = generate_class_instance(TariffGeneratedRate, tariff_component_id=tc_id, seed=2)
-    period_start = datetime(2022, 1, 1, tzinfo=UTC)
-    period_end = datetime(2022, 1, 2, tzinfo=UTC)
+    since = datetime(2022, 1, 1, tzinfo=UTC)
+    until = datetime(2022, 1, 2, tzinfo=UTC)
+    group = "abc 123"
 
     page = TariffGeneratedRateListMapper.map_to_page_response(
         total_count=42,
         rates=[rate1, rate2],
         start=5,
         limit=10,
-        period_start=period_start,
-        period_end=period_end,
+        start_time_since=since,
+        start_time_until=until,
         site_id=7,
         tariff_component_id=tc_id,
+        group=group,
     )
 
     assert isinstance(page, TariffGeneratedRatePageResponse)
     assert page.total_count == 42
     assert page.start == 5
     assert page.limit == 10
-    assert page.period_start == period_start
-    assert page.period_end == period_end
+    assert page.start_time_since == since
+    assert page.start_time_until == until
     assert page.site_id == 7
+    assert page.group == group
     assert len(page.rates) == 2
     assert page.rates[0].tariff_generated_rate_id == rate1.tariff_generated_rate_id
     assert page.rates[1].tariff_generated_rate_id == rate2.tariff_generated_rate_id
@@ -195,9 +198,10 @@ def test_tariff_genrate_mapper_to_page_response_no_site_filter():
         rates=[],
         start=0,
         limit=100,
-        period_start=datetime(2022, 1, 1, tzinfo=UTC),
-        period_end=datetime(2022, 1, 2, tzinfo=UTC),
+        start_time_since=datetime(2022, 1, 1, tzinfo=UTC),
+        start_time_until=datetime(2022, 1, 2, tzinfo=UTC),
         site_id=None,
+        group=None,
         tariff_component_id=1,
     )
 

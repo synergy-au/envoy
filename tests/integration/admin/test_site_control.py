@@ -408,8 +408,8 @@ async def test_get_all_site_controls(
     "group, expected_doe_ids",
     [
         (None, [1, 2, 3, 4]),
-        ("Group-1", [1, 2, 3, 4]),
-        ("Group-2", []),
+        ("Group-1", []),
+        ("Group-2", [1, 2, 4]),
         ("Group-DNE", []),
     ],
 )
@@ -508,11 +508,11 @@ async def test_get_all_site_controls_combined_filters_are_additive(admin_client_
         )
         await session.commit()
 
-    # DOE 1 matches group Group-1, the start_time window and site_id 1 - should be the only match
+    # DOE 1 matches group Group-2, the start_time window and site_id 1 - should be the only match
     response = await admin_client_auth.get(
         SiteControlUri.format(group_id=1),
         params={
-            "group": "Group-1",
+            "group": "Group-2",
             "start_time_since": "2022-05-07T01:02:00+10:00",
             "start_time_until": "2022-05-07T03:04:00+10:00",
             "site_id": 1,
@@ -526,7 +526,7 @@ async def test_get_all_site_controls_combined_filters_are_additive(admin_client_
     response_no_match = await admin_client_auth.get(
         SiteControlUri.format(group_id=1),
         params={
-            "group": "Group-2",
+            "group": "Group-1",
             "start_time_since": "2022-05-07T01:02:00+10:00",
             "start_time_until": "2022-05-07T03:04:00+10:00",
             "site_id": 1,

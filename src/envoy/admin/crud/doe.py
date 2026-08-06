@@ -301,7 +301,7 @@ def _apply_doe_filters(
     if changed_after and changed_after != datetime.min:
         stmt = stmt.where(DynamicOperatingEnvelope.changed_time >= changed_after)
 
-    if site_group_ids:
+    if site_group_ids is not None:
         stmt = stmt.where(DynamicOperatingEnvelope.site_group_id.in_(site_group_ids))
 
     if start_time_since is not None:

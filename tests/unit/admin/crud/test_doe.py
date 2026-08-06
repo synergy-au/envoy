@@ -451,8 +451,8 @@ async def site_control_group_1_scoped_to_group_1(pg_base_config):
     [
         (None, [1, 2, 3, 4]),
         ({1, 2, 3, 4, 99}, [1, 2, 3, 4]),
-        ({1}, [1, 2, 3, 4]),
-        ({2}, []),
+        ({2}, [1, 2, 4]),
+        ({1}, []),
         ({99}, []),
         (set(), []),
     ],
@@ -517,7 +517,7 @@ async def test_select_all_does_combined_filters_are_additive(site_control_group_
             0,
             500,
             None,
-            site_group_ids={1},
+            site_group_ids={2},
             start_time_since=datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
             start_time_until=datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")),
         )
@@ -530,7 +530,7 @@ async def test_select_all_does_combined_filters_are_additive(site_control_group_
             0,
             500,
             None,
-            site_group_ids={2},
+            site_group_ids={1},
             start_time_since=datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
             start_time_until=datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")),
         )
@@ -619,7 +619,7 @@ async def extra_site_control_groups_scoped(extra_site_control_groups):
     "site_group_ids, expected_site_control_ids",
     [
         (None, [1, 2, 3, 4]),
-        (set(), []),
+        (set(), [3, 4]),
         ({1, 2, 3, 99}, [1, 2, 3, 4]),
         ({1}, [1, 3, 4]),  # group 1 (scoped) + groups 3,4 (global)
         ({2}, [2, 3, 4]),  # group 2 (scoped) + groups 3,4 (global)
