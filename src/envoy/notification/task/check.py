@@ -241,7 +241,7 @@ def entities_to_notification(  # noqa: C901
             rates=[e.original for e in cast(Sequence[SiteScopedTariffGeneratedRate], entities)],
             sub=sub,
             scope=scope,
-            notification_type=notification_type,
+            notification_type=NotificationType.ENTITY_CHANGED,  # deletes for rates are just a status change
             now=utc_now(),
         )
     elif resource == SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE:
@@ -252,7 +252,7 @@ def entities_to_notification(  # noqa: C901
             does=[e.original for e in cast(Sequence[SiteScopedDynamicOperatingEnvelope], entities)],
             sub=sub,
             scope=scope,
-            notification_type=notification_type,
+            notification_type=NotificationType.ENTITY_CHANGED,  # deletes for does are just a status change
             power10_multiplier=config.site_control_pow10_encoding,
         )
     elif resource == SubscriptionResource.SITE_CONTROL_GROUP:
