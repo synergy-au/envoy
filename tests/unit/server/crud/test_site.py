@@ -35,13 +35,21 @@ from envoy.server.model.archive.site import (
     ArchiveSiteDERRating,
     ArchiveSiteDERSetting,
     ArchiveSiteDERStatus,
+    ArchiveSiteGroupAssignment,
 )
 from envoy.server.model.archive.site_reading import ArchiveSiteReading, ArchiveSiteReadingType
 from envoy.server.model.archive.subscription import ArchiveSubscription, ArchiveSubscriptionCondition
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.base import Base
 from envoy.server.model.doe import DynamicOperatingEnvelope
-from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus
+from envoy.server.model.site import (
+    Site,
+    SiteDERAvailability,
+    SiteDERRating,
+    SiteDERSetting,
+    SiteDERStatus,
+    SiteGroupAssignment,
+)
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.subscription import Subscription, SubscriptionCondition
 from envoy.server.model.tariff import TariffGeneratedRate
@@ -719,25 +727,9 @@ async def snapshot_all_site_tables(session: AsyncSession, agg_id: int, site_id: 
         )
     )
 
-    snapshot.append(
-        await count_table_rows(
-            session,
-            DynamicOperatingEnvelope,
-            None,
-            ArchiveDynamicOperatingEnvelope,
-            lambda q: q.where(DynamicOperatingEnvelope.site_id == site_id),
-        )
-    )
-
-    snapshot.append(
-        await count_table_rows(
-            session,
-            TariffGeneratedRate,
-            None,
-            ArchiveTariffGeneratedRate,
-            lambda q: q.where(TariffGeneratedRate.site_id == site_id),
-        )
-    )
+    # NOTE: DynamicOperatingEnvelope and TariffGeneratedRate are deliberately NOT snapshotted here - they now target
+    # a SiteGroup rather than a single site, so neither is deleted/archived alongside its site (see
+    # test_delete_site_for_aggregator's dedicated DOE/rate/SiteGroupAssignment assertions instead).
 
     return snapshot
 
@@ -781,6 +773,15 @@ async def test_delete_site_for_aggregator(
     # Count everything before the delete
     async with generate_async_session(pg_base_config) as session:
         snapshot_before = await snapshot_all_site_tables(session, agg_id=agg_id, site_id=site_id)
+        doe_count_before = (
+            await session.execute(select(func.count()).select_from(DynamicOperatingEnvelope))
+        ).scalar_one()
+        rate_count_before = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+        assignments_before = (
+            await session.execute(
+                select(func.count()).select_from(SiteGroupAssignment).where(SiteGroupAssignment.site_id == site_id)
+            )
+        ).scalar_one()
 
     # Perform the delete
     now = utc_now()
@@ -834,6 +835,53 @@ async def test_delete_site_for_aggregator(
             assert site is not None, "If the delete was NOT committed - the site should still exist"
         else:
             assert site is None, "If the delete was NOT committed but the site DNE - it should continue to not exist"
+
+    # DOEs/TariffGeneratedRates now target a SiteGroup rather than this Site directly - deleting a Site should
+    # NEVER touch/archive either, it should only remove this site's own SiteGroupAssignment rows (severing its
+    # membership from any groups)
+    async with generate_async_session(pg_base_config) as session:
+        doe_count_after = (
+            await session.execute(select(func.count()).select_from(DynamicOperatingEnvelope))
+        ).scalar_one()
+        archive_doe_count_after = (
+            await session.execute(select(func.count()).select_from(ArchiveDynamicOperatingEnvelope))
+        ).scalar_one()
+        rate_count_after = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+        archive_rate_count_after = (
+            await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))
+        ).scalar_one()
+        remaining_assignments = (
+            await session.execute(
+                select(func.count()).select_from(SiteGroupAssignment).where(SiteGroupAssignment.site_id == site_id)
+            )
+        ).scalar_one()
+        archived_assignments = (
+            await session.execute(
+                select(func.count())
+                .select_from(ArchiveSiteGroupAssignment)
+                .where(
+                    ArchiveSiteGroupAssignment.site_id == site_id,
+                    ArchiveSiteGroupAssignment.deleted_time.is_not(None),
+                )
+            )
+        ).scalar_one()
+
+        assert doe_count_after == doe_count_before, (
+            "DOEs should never be deleted/archived as a side effect of Site deletion"
+        )
+        assert archive_doe_count_after == 0, "No DOE archive rows should be created by deleting a Site"
+        assert rate_count_after == rate_count_before, (
+            "TariffGeneratedRates should never be deleted/archived as a side effect of Site deletion"
+        )
+        assert archive_rate_count_after == 0, "No rate archive rows should be created by deleting a Site"
+        if delete_occurred:
+            assert remaining_assignments == 0, "The deleted site's SiteGroupAssignment rows should be gone"
+            assert archived_assignments == assignments_before, (
+                "The deleted site's SiteGroupAssignment rows should be archived"
+            )
+        else:
+            assert remaining_assignments == assignments_before, "Nothing should change if the delete didn't commit"
+            assert archived_assignments == 0, "Nothing should change if the delete didn't commit"
 
 
 @pytest.mark.anyio

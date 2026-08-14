@@ -7,15 +7,18 @@ from assertical.asserts.type import assert_dict_type, assert_list_type
 from assertical.fake.generator import clone_class_instance, generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
+    cancel_colliding_tariff_generated_rates,
     cancel_tariff_generated_rate,
-    count_tariff_generated_rates_for_period,
+    count_filtered_tariff_generated_rates,
     insert_many_tariff_genrate,
+    insert_many_tariff_genrate_ignore_collisions,
     insert_single_tariff,
+    select_filtered_tariff_generated_rates,
     select_single_tariff_generated_rate,
-    select_tariff_generated_rates_for_period,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
     update_single_tariff_component,
@@ -40,7 +43,7 @@ async def _select_tariff_generated_rate_by_id(session, id: int) -> TariffGenerat
 @pytest.mark.anyio
 async def test_insert_single_tariff(pg_empty_config):
     async with generate_async_session(pg_empty_config) as session:
-        tariff_in = generate_class_instance(Tariff, tariff_id=None)
+        tariff_in = generate_class_instance(Tariff, tariff_id=None, required_site_group_id=None)
         await insert_single_tariff(session, tariff_in)
 
         await session.flush()
@@ -61,7 +64,7 @@ async def test_insert_single_tariff(pg_empty_config):
 async def test_update_single_tariff(pg_base_config):
     changed_time = datetime(2016, 6, 7, 14, 6, 8, tzinfo=UTC)
     async with generate_async_session(pg_base_config) as session:
-        tariff_in = generate_class_instance(Tariff)
+        tariff_in = generate_class_instance(Tariff, required_site_group_id=None)
         tariff_in.tariff_id = 1
         await update_single_tariff(session, tariff_in, changed_time)
         await session.flush()
@@ -173,7 +176,7 @@ async def test_insert_many_tariff_genrate_insert(pg_base_config):
 
     async with generate_async_session(pg_base_config) as session:
         rate_in: TariffGeneratedRate = generate_class_instance(
-            TariffGeneratedRate, generate_relationships=False, site_id=1, tariff_id=1, tariff_component_id=1
+            TariffGeneratedRate, generate_relationships=False, site_group_id=1, tariff_id=1, tariff_component_id=1
         )
         # clean up generated instance to ensure it doesn't clash with base_config
         del rate_in.tariff_generated_rate_id
@@ -203,14 +206,21 @@ async def test_insert_many_tariff_genrate_insert(pg_base_config):
 
         rate_in_1 = generate_class_instance(
             TariffGeneratedRate,
-            site_id=1,
+            site_group_id=1,
             tariff_id=1,
             tariff_component_id=1,
             start_time=rate_in.start_time + timedelta(seconds=1),
         )
+        rate_in_2 = generate_class_instance(
+            TariffGeneratedRate,
+            site_group_id=1,
+            tariff_id=1,
+            tariff_component_id=1,
+            start_time=rate_in.start_time + timedelta(seconds=2),
+        )
 
         # Rerun as a sanity check to catch any weird conflict errors
-        inserted_ids_1 = await insert_many_tariff_genrate(session, [rate_in, rate_in_1])
+        inserted_ids_1 = await insert_many_tariff_genrate(session, [rate_in_1, rate_in_2])
         assert_list_type(int, inserted_ids_1, count=2)
 
         assert inserted_ids[0] not in inserted_ids_1, "These should be new "
@@ -220,23 +230,25 @@ async def test_insert_many_tariff_genrate_insert(pg_base_config):
 
 
 @pytest.mark.anyio
-async def test_insert_many_tariff_genrate_overlapping(pg_base_config):
-    """Assert that we are able to successfully insert an overlapping TariffGeneratedRate in the db"""
+async def test_insert_many_tariff_genrate_overlapping_time_ranges(pg_base_config):
+    """Assert that we are able to successfully insert a TariffGeneratedRate whose time range overlaps an existing
+    record, provided it doesn't share the exact same (tariff_component_id, start_time, site_group_id)"""
 
     async with generate_async_session(pg_base_config) as session:
         original_rate = await _select_latest_tariff_generated_rate(session)
         cloned_original_rate = clone_class_instance(
-            original_rate, ignored_properties={"tariff", "site", "tariff_component"}
+            original_rate, ignored_properties={"tariff", "site_group", "tariff_component"}
         )
 
         # clean up generated instance to ensure it doesn't clash with base_config
         rate_to_insert: TariffGeneratedRate = clone_class_instance(
             original_rate,
-            ignored_properties={"tariff_generated_rate_id", "created_time", "site", "tariff", "tariff_component"},
+            ignored_properties={"tariff_generated_rate_id", "created_time", "site_group", "tariff", "tariff_component"},
         )
         rate_to_insert.price_pow10_encoded += 123
         rate_to_insert.changed_time = datetime(2026, 1, 3, tzinfo=UTC)
         rate_to_insert.created_time = datetime(2027, 1, 3, tzinfo=UTC)  # This shouldn't do anything
+        rate_to_insert.start_time = original_rate.start_time + timedelta(seconds=1)  # avoid the unique constraint
 
         inserted_ids = await insert_many_tariff_genrate(session, [rate_to_insert])
         await session.commit()
@@ -271,6 +283,126 @@ async def test_insert_many_tariff_genrate_overlapping(pg_base_config):
         assert (await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))).scalar_one() == 0
 
 
+@pytest.mark.anyio
+async def test_insert_many_tariff_genrate_collision_raises(pg_base_config):
+    """Assert that inserting a TariffGeneratedRate that collides on (tariff_component_id, start_time,
+    site_group_id) with an existing record raises an IntegrityError and leaves the DB untouched."""
+
+    async with generate_async_session(pg_base_config) as session:
+        original_rate = await _select_latest_tariff_generated_rate(session)
+        cloned_original_rate = clone_class_instance(
+            original_rate, ignored_properties={"tariff", "site_group", "tariff_component"}
+        )
+
+        # Shares the same (tariff_component_id, start_time, site_group_id) as original_rate
+        colliding_rate: TariffGeneratedRate = clone_class_instance(
+            original_rate,
+            ignored_properties={"tariff_generated_rate_id", "created_time", "site_group", "tariff", "tariff_component"},
+        )
+        colliding_rate.price_pow10_encoded += 123
+
+        with pytest.raises(IntegrityError):
+            await insert_many_tariff_genrate(session, [colliding_rate])
+
+        await session.rollback()
+
+    # Nothing should have been written to the DB (including the archive)
+    async with generate_async_session(pg_base_config) as session:
+        rate_after_insert = await _select_tariff_generated_rate_by_id(
+            session, cloned_original_rate.tariff_generated_rate_id
+        )
+        assert_class_instance_equality(TariffGeneratedRate, cloned_original_rate, rate_after_insert)
+
+        assert (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one() == 7, (
+            "base_config.sql seeds 7 rates - none should have been added"
+        )
+        assert (await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))).scalar_one() == 0
+
+
+@pytest.mark.anyio
+async def test_insert_many_tariff_genrate_ignore_collisions_empty(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        assert await insert_many_tariff_genrate_ignore_collisions(session, []) == []
+
+
+@pytest.mark.anyio
+async def test_insert_many_tariff_genrate_ignore_collisions(pg_base_config):
+    """Mix of colliding/new/duplicated-within-batch rates - checks the returned IDs preserve 1-1 correspondence"""
+
+    async with generate_async_session(pg_base_config) as session:
+        original_rate = await _select_latest_tariff_generated_rate(session)
+
+        colliding_rate: TariffGeneratedRate = clone_class_instance(
+            original_rate,
+            ignored_properties={"tariff_generated_rate_id", "created_time", "site_group", "tariff", "tariff_component"},
+        )
+        colliding_rate.price_pow10_encoded += 123  # Collides with original_rate - shouldn't be inserted
+
+        new_rate_1: TariffGeneratedRate = clone_class_instance(
+            colliding_rate, ignored_properties={"site_group", "tariff", "tariff_component"}
+        )
+        new_rate_1.start_time = original_rate.start_time + timedelta(seconds=1)  # Doesn't collide
+
+        new_rate_2: TariffGeneratedRate = clone_class_instance(
+            colliding_rate, ignored_properties={"site_group", "tariff", "tariff_component"}
+        )
+        new_rate_2.start_time = original_rate.start_time + timedelta(seconds=2)  # Doesn't collide
+
+        result = await insert_many_tariff_genrate_ignore_collisions(session, [colliding_rate, new_rate_1, new_rate_2])
+        await session.commit()
+
+        assert len(result) == 3
+        assert result[0] is None
+        assert isinstance(result[1], int)
+        assert isinstance(result[2], int)
+        assert result[1] != result[2]
+
+    async with generate_async_session(pg_base_config) as session:
+        assert (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one() == 9, (
+            "The 7 seeded rates plus the 2 newly inserted (non-colliding) rates"
+        )
+        assert (await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))).scalar_one() == 0
+
+
+@pytest.mark.anyio
+async def test_cancel_colliding_tariff_generated_rates_empty(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        await cancel_colliding_tariff_generated_rates(session, [], datetime(2028, 4, 1, tzinfo=UTC))
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        assert (await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))).scalar_one() == 0
+
+
+@pytest.mark.anyio
+async def test_cancel_colliding_tariff_generated_rates(pg_base_config):
+    """Only rates that collide on (tariff_component_id, start_time, site_group_id) should be cancelled"""
+
+    deleted_time = datetime(2028, 4, 1, tzinfo=UTC)
+    async with generate_async_session(pg_base_config) as session:
+        rate_1 = await _select_tariff_generated_rate_by_id(session, 1)  # Will collide
+        rate_2 = await _select_tariff_generated_rate_by_id(session, 2)  # Will collide
+        rate_4 = await _select_tariff_generated_rate_by_id(session, 4)  # Will NOT collide (diff site_group_id)
+        assert rate_1 is not None and rate_2 is not None and rate_4 is not None
+
+        colliding_1 = clone_class_instance(rate_1, ignored_properties={"tariff", "site_group", "tariff_component"})
+        colliding_2 = clone_class_instance(rate_2, ignored_properties={"tariff", "site_group", "tariff_component"})
+        non_colliding = clone_class_instance(rate_4, ignored_properties={"tariff", "site_group", "tariff_component"})
+        non_colliding.site_group_id = 99  # No existing rate matches this combination
+
+        await cancel_colliding_tariff_generated_rates(session, [colliding_1, colliding_2, non_colliding], deleted_time)
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        remaining_ids = (await session.execute(select(TariffGeneratedRate.tariff_generated_rate_id))).scalars().all()
+        assert sorted(remaining_ids) == [3, 4, 5, 6, 7], "Only rates 1 and 2 should have been cancelled"
+
+        archive_records = (await session.execute(select(ArchiveTariffGeneratedRate))).scalars().all()
+        assert len(archive_records) == 2
+        assert sorted([a.tariff_generated_rate_id for a in archive_records]) == [1, 2]
+        assert all(a.deleted_time == deleted_time for a in archive_records)
+
+
 @pytest.mark.parametrize(
     "tariff_component_ids, expected_result",
     [
@@ -302,13 +434,13 @@ async def test_select_single_tariff_generated_rate(pg_base_config):
 
         rate1 = await select_single_tariff_generated_rate(session, 1)
         assert isinstance(rate1, TariffGeneratedRate)
-        assert rate1.site_id == 1
+        assert rate1.site_group_id == 2
         assert rate1.price_pow10_encoded == 1111
         assert rate1.price_pow10_encoded_block_1 == 1001
 
         rate4 = await select_single_tariff_generated_rate(session, 4)
         assert isinstance(rate4, TariffGeneratedRate)
-        assert rate4.site_id == 2
+        assert rate4.site_group_id == 4
         assert rate4.price_pow10_encoded == 4444
         assert rate4.price_pow10_encoded_block_1 is None
 
@@ -404,172 +536,80 @@ async def test_cancel_and_delete_tariff_component(
             assert all([a.deleted_time == deleted_time for a in archive_rates])
 
 
-# --- Tests for count/select tariff_generated_rates_for_period ---
-
-# Base config rates for COMPONENT_ID=1 all start on 2022-03-05 AEST:
-# Rate 1: site_id=1, 2022-03-05T01:00:00+10
-# Rate 2: site_id=1, 2022-03-05T01:00:11+10
-# Rate 3: site_id=1, 2022-03-05T01:00:33+10
-# Rate 4: site_id=2, 2022-03-05T01:00:00+10
-# Rate 5: site_id=3, 2022-03-05T01:00:00+10
-
-COMPONENT_ID = 1
-
-# Period that covers all component 1 rates on 2022-03-05 AEST
-PERIOD_DAY1_START = datetime(2022, 3, 5, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-PERIOD_DAY1_END = datetime(2022, 3, 6, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-
-# Period that covers no component 1 rates (2022-03-06 AEST)
-PERIOD_DAY2_START = datetime(2022, 3, 6, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-PERIOD_DAY2_END = datetime(2022, 3, 7, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-
-# Period that covers all component 1 rates plus the following AEST day
-PERIOD_ALL_START = datetime(2022, 3, 5, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-PERIOD_ALL_END = datetime(2022, 3, 7, 0, 0, 0, tzinfo=timezone(timedelta(hours=10)))
-
-# Period with no rates
-PERIOD_EMPTY_START = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
-PERIOD_EMPTY_END = datetime(2020, 1, 2, 0, 0, 0, tzinfo=UTC)
-
-
+@pytest.mark.parametrize(
+    "tariff_component_id,start_time_since,start_time_until,site_group_ids,start,limit,expected_ids,expected_count",
+    [
+        (1, None, None, None, 0, 99, [1, 2, 3, 4, 5], 5),
+        (1, None, None, None, 1, 2, [2, 3], 5),  # paging
+        (2, None, None, None, 0, 100, [6], 1),
+        (3, None, None, None, 0, 100, [], 0),
+        (1, datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC), None, 0, 100, [], 0),
+        (
+            1,
+            datetime(2000, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            None,
+            0,
+            100,
+            [1, 2, 3, 4, 5],
+            5,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            None,
+            0,
+            100,
+            [1, 2, 4, 5],
+            4,
+        ),
+        (1, None, None, {1, 2, 99}, 0, 99, [1, 2, 3], 3),
+        (1, None, None, {1, 99}, 0, 99, [], 0),
+        (1, None, None, set(), 0, 99, [], 0),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            {1, 2},
+            0,
+            100,
+            [1, 2],
+            2,
+        ),
+        (99, None, None, None, 0, 99, [], 0),
+    ],
+)
 @pytest.mark.anyio
-async def test_count_tariff_generated_rates_for_period_all(pg_base_config):
-    """Count all rates in a period covering all base config data"""
+async def test_select_count_filtered_tariff_generated_rates(
+    pg_base_config,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+    start: int,
+    limit: int,
+    expected_ids: list[int],
+    expected_count: int,
+):
     async with generate_async_session(pg_base_config) as session:
-        count = await count_tariff_generated_rates_for_period(session, COMPONENT_ID, PERIOD_ALL_START, PERIOD_ALL_END)
-        assert count == 5
-
-
-@pytest.mark.anyio
-async def test_count_tariff_generated_rates_for_period_day1(pg_base_config):
-    """Count rates for a single AEST day covering all component 1 rates"""
-    async with generate_async_session(pg_base_config) as session:
-        count = await count_tariff_generated_rates_for_period(session, COMPONENT_ID, PERIOD_DAY1_START, PERIOD_DAY1_END)
-        assert count == 5
-
-
-@pytest.mark.anyio
-async def test_count_tariff_generated_rates_for_period_day2(pg_base_config):
-    """Count rates for a single day with no component 1 data"""
-    async with generate_async_session(pg_base_config) as session:
-        count = await count_tariff_generated_rates_for_period(session, COMPONENT_ID, PERIOD_DAY2_START, PERIOD_DAY2_END)
-        assert count == 0
-
-
-@pytest.mark.anyio
-async def test_count_tariff_generated_rates_for_period_empty(pg_base_config):
-    """Count rates for a period with no data"""
-    async with generate_async_session(pg_base_config) as session:
-        count = await count_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, PERIOD_EMPTY_START, PERIOD_EMPTY_END
-        )
-        assert count == 0
-
-
-@pytest.mark.anyio
-async def test_count_tariff_generated_rates_for_period_with_site_filter(pg_base_config):
-    """Count rates filtered by site_id"""
-    async with generate_async_session(pg_base_config) as session:
-        # site_id=1 has rates 1, 2, 3
-        count = await count_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, PERIOD_ALL_START, PERIOD_ALL_END, site_id=1
-        )
-        assert count == 3
-
-        # site_id=2 has rate 4 only
-        count = await count_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, PERIOD_ALL_START, PERIOD_ALL_END, site_id=2
-        )
-        assert count == 1
-
-        # site_id=999 has no rates
-        count = await count_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, PERIOD_ALL_START, PERIOD_ALL_END, site_id=999
-        )
-        assert count == 0
-
-
-@pytest.mark.anyio
-async def test_select_tariff_generated_rates_for_period_all(pg_base_config):
-    """Select all rates — verify ordering by start_time ASC, site_id ASC"""
-    async with generate_async_session(pg_base_config) as session:
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 0, 100, PERIOD_ALL_START, PERIOD_ALL_END
-        )
-        assert len(rates) == 5
-        ids = [r.tariff_generated_rate_id for r in rates]
-        # Rates 1/4/5 share start_time, ordered by site_id (1 before 2 before 3)
-        # Rate 2 comes next (later start_time same day), Rate 3 is next
-        assert ids == [1, 4, 5, 2, 3]
-
-
-@pytest.mark.anyio
-async def test_select_tariff_generated_rates_for_period_pagination(pg_base_config):
-    """Test pagination with start/limit"""
-    async with generate_async_session(pg_base_config) as session:
-        # First page: 2 rates
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 0, 2, PERIOD_ALL_START, PERIOD_ALL_END
-        )
-        assert len(rates) == 2
-        assert [r.tariff_generated_rate_id for r in rates] == [1, 4]
-
-        # Second page: next 2 rates
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 2, 2, PERIOD_ALL_START, PERIOD_ALL_END
-        )
-        assert len(rates) == 2
-        assert [r.tariff_generated_rate_id for r in rates] == [5, 2]
-
-        # Past end: empty
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 999, 100, PERIOD_ALL_START, PERIOD_ALL_END
-        )
-        assert len(rates) == 0
-
-
-@pytest.mark.anyio
-async def test_select_tariff_generated_rates_for_period_with_site_filter(pg_base_config):
-    """Select rates filtered by site_id"""
-    async with generate_async_session(pg_base_config) as session:
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 0, 100, PERIOD_DAY1_START, PERIOD_DAY1_END, site_id=1
-        )
-        assert len(rates) == 3
-        assert all(r.site_id == 1 for r in rates)
-
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 0, 100, PERIOD_DAY1_START, PERIOD_DAY1_END, site_id=2
-        )
-        assert len(rates) == 1
-        assert rates[0].site_id == 2
-
-        rates = await select_tariff_generated_rates_for_period(
-            session, COMPONENT_ID, 0, 100, PERIOD_DAY1_START, PERIOD_DAY1_END, site_id=3
-        )
-        assert len(rates) == 1
-        assert rates[0].site_id == 3
-
-
-@pytest.mark.anyio
-async def test_select_tariff_generated_rates_for_period_boundary(pg_base_config):
-    """Verify period_start is inclusive and period_end is exclusive"""
-    async with generate_async_session(pg_base_config) as session:
-        # Rate 2 start_time is 2022-03-05T01:00:11+10
-        # Period ending exactly at that time should NOT include it
-        count = await count_tariff_generated_rates_for_period(
+        actual_rates = await select_filtered_tariff_generated_rates(
             session,
-            COMPONENT_ID,
-            PERIOD_DAY1_START,
-            datetime(2022, 3, 5, 1, 0, 11, tzinfo=timezone(timedelta(hours=10))),
+            tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            site_group_ids=site_group_ids,
+            start=start,
+            limit=limit,
         )
-        assert count == 3
-
-        # Period ending 1 second after should include it
-        count = await count_tariff_generated_rates_for_period(
+        actual_count = await count_filtered_tariff_generated_rates(
             session,
-            COMPONENT_ID,
-            PERIOD_DAY1_START,
-            datetime(2022, 3, 5, 1, 0, 12, tzinfo=timezone(timedelta(hours=10))),
+            tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            site_group_ids=site_group_ids,
         )
-        assert count == 4
+
+        assert expected_ids == [r.tariff_generated_rate_id for r in actual_rates]
+        assert_list_type(TariffGeneratedRate, actual_rates, count=len(expected_ids))
+        assert actual_count == expected_count

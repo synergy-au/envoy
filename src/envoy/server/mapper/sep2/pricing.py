@@ -306,12 +306,13 @@ class TimeTariffIntervalMapper:
         scope: DeviceOrAggregatorRequestScope | AggregatorRequestScope,
         now: datetime,
         rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
+        site_id: int,
     ) -> TimeTariffIntervalResponse:
         """Creates a new TimeTariffIntervalResponse for the given rate"""
         href = generate_href(
             uri.TimeTariffIntervalUri,
             scope,
-            site_id=rate.site_id,
+            site_id=site_id,
             tariff_id=rate.tariff_id,
             rate_component_id=rate.tariff_component_id,
             tti_id=rate.tariff_generated_rate_id,
@@ -319,7 +320,7 @@ class TimeTariffIntervalMapper:
         cti_list_href = generate_href(
             uri.ConsumptionTariffIntervalListUri,
             scope,
-            site_id=rate.site_id,
+            site_id=site_id,
             tariff_id=rate.tariff_id,
             rate_component_id=rate.tariff_component_id,
             tti_id=rate.tariff_generated_rate_id,
@@ -327,7 +328,7 @@ class TimeTariffIntervalMapper:
         rate_component_href = generate_href(
             uri.RateComponentUri,
             scope,
-            site_id=rate.site_id,
+            site_id=site_id,
             tariff_id=rate.tariff_id,
             rate_component_id=rate.tariff_component_id,
         )
@@ -356,7 +357,7 @@ class TimeTariffIntervalMapper:
             touTier=TOUType.NOT_APPLICABLE,
             creationTime=int(rate.changed_time.timestamp()),
             replyTo=ResponseListMapper.response_list_href(
-                scope, rate.site_id, ResponseSetType.TARIFF_GENERATED_RATES
+                scope, site_id, ResponseSetType.TARIFF_GENERATED_RATES
             ),  # Response function set
             responseRequired=SPECIFIC_RESPONSE_REQUIRED,  # Response function set
             interval=DateTimeIntervalType(
@@ -377,7 +378,7 @@ class TimeTariffIntervalMapper:
 
     @staticmethod
     def map_to_list_response(
-        scope: DeviceOrAggregatorRequestScope,
+        scope: SiteRequestScope,
         tariff_id: int,
         tariff_component_id: int | None,
         now: datetime,
@@ -406,5 +407,7 @@ class TimeTariffIntervalMapper:
             subscribable=SubscribableType.resource_supports_non_conditional_subscriptions,
             all_=total,
             results=len(rates),
-            TimeTariffInterval=[TimeTariffIntervalMapper.map_to_response(scope, now, rate) for rate in rates],
+            TimeTariffInterval=[
+                TimeTariffIntervalMapper.map_to_response(scope, now, rate, scope.site_id) for rate in rates
+            ],
         )

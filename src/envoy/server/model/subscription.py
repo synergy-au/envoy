@@ -50,7 +50,7 @@ class Subscription(Base):
         INTEGER, nullable=True
     )  # Like resource_id but only for subscriptions with a multi part ID - this represents an ID of a parent list
     scoped_site_id: Mapped[int | None] = mapped_column(
-        ForeignKey("site.site_id"), nullable=True
+        ForeignKey("site.site_id"), nullable=True, index=True
     )  # If set - this subscription is scoped to this specific site_id
 
     notification_uri: Mapped[str] = mapped_column(VARCHAR(length=2048))  # remote URI where notifications will be sent
@@ -79,7 +79,9 @@ class SubscriptionCondition(Base):
     __tablename__ = "subscription_condition"
 
     subscription_condition_id: Mapped[int] = mapped_column(primary_key=True)
-    subscription_id: Mapped[int] = mapped_column(ForeignKey("subscription.subscription_id", ondelete="CASCADE"))
+    subscription_id: Mapped[int] = mapped_column(
+        ForeignKey("subscription.subscription_id", ondelete="CASCADE"), index=True
+    )
 
     attribute: Mapped[ConditionAttributeIdentifier] = mapped_column(INTEGER)
     lower_threshold: Mapped[int] = mapped_column(

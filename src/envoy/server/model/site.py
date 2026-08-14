@@ -18,6 +18,7 @@ from envoy_schema.server.schema.sep2.der import (
 from envoy_schema.server.schema.sep2.log_events import FunctionSetIdentifier, ProfileIdentifier
 from envoy_schema.server.schema.sep2.types import DeviceCategory
 from sqlalchemy import (
+    BOOLEAN,
     DECIMAL,
     INTEGER,
     SMALLINT,
@@ -103,6 +104,9 @@ class SiteGroup(Base):
         DateTime(timezone=True), server_default=func.now()
     )  # When the site group was created
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    default_group: Mapped[bool] = mapped_column(
+        BOOLEAN, nullable=False, default=False, server_default="false", index=True
+    )  # If set - all new site registrations (in/out of band) will be automatically assigned to this group
 
     assignments: Mapped[list["SiteGroupAssignment"]] = relationship(
         back_populates="group",
@@ -129,8 +133,12 @@ class SiteGroupAssignment(Base):
     site: Mapped["Site"] = relationship(back_populates="assignments", lazy="raise")
     group: Mapped["SiteGroup"] = relationship(back_populates="assignments", lazy="raise")
 
-    # We don't want a single site to be linked to a group multiple times
-    __table_args__ = (UniqueConstraint("site_id", "site_group_id", name="site_id_site_group_id_uc"),)
+    __table_args__ = (
+        # We don't want a single site to be linked to a group multiple times
+        UniqueConstraint("site_id", "site_group_id", name="site_id_site_group_id_uc"),
+        # Supports "given a site_group_id, enumerate member site_ids" (notification fan-out, admin group listings)
+        Index("ix_site_group_assignment_site_group_id_site_id", "site_group_id", "site_id"),
+    )
 
 
 class SiteDERRating(Base):

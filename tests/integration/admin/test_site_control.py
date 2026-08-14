@@ -26,7 +26,7 @@ from envoy_schema.admin.schema.uri import (
     SiteControlUri,
 )
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from envoy.admin.crud.doe import count_all_does, count_all_site_control_groups
 from envoy.server.api.request import MAX_LIMIT
@@ -39,7 +39,7 @@ from tests.integration.response import read_location_header, read_response_body_
 @pytest.mark.anyio
 async def test_create_site_control_group(admin_client_auth: AsyncClient):
     """Tests that site control groups can be created and then fetched"""
-    group_request = generate_class_instance(SiteControlGroupRequest)
+    group_request = generate_class_instance(SiteControlGroupRequest, required_site_group_id=None)
     resp = await admin_client_auth.post(SiteControlGroupListUri, content=group_request.model_dump_json())
 
     assert resp.status_code == HTTPStatus.CREATED
@@ -70,7 +70,9 @@ async def test_update_site_control_group_change(pg_base_config, admin_client_aut
 
     site_control_group_id = 1
     uri = SiteControlGroupUri.format(group_id=site_control_group_id)
-    group_request = generate_class_instance(SiteControlGroupRequest, fsa_id=fsa_id, display_id=None)
+    group_request = generate_class_instance(
+        SiteControlGroupRequest, fsa_id=fsa_id, display_id=None, required_site_group_id=None
+    )
     resp = await admin_client_auth.put(uri, content=group_request.model_dump_json())
 
     assert resp.status_code == HTTPStatus.OK
@@ -204,8 +206,8 @@ async def test_get_all_site_control_groups(
 
 @pytest.mark.anyio
 async def test_create_site_controls(admin_client_auth: AsyncClient):
-    control_1 = generate_class_instance(SiteControlRequest, site_id=1)
-    control_2 = generate_class_instance(SiteControlRequest, site_id=2)
+    control_1 = generate_class_instance(SiteControlRequest, site_group_id=2)
+    control_2 = generate_class_instance(SiteControlRequest, site_group_id=4)
 
     content = f"[{control_1.model_dump_json()}, {control_2.model_dump_json()}]"
     resp = await admin_client_auth.post(
@@ -223,7 +225,7 @@ async def test_create_site_controls(admin_client_auth: AsyncClient):
 
 @pytest.mark.anyio
 async def test_create_site_controls_bad_group_id(admin_client_auth: AsyncClient):
-    control = generate_class_instance(SiteControlRequest, site_id=1)
+    control = generate_class_instance(SiteControlRequest, site_group_id=2)
     resp = await admin_client_auth.post(SiteControlUri.format(group_id=99), content=f"[{control.model_dump_json()}]")
     assert resp.status_code == HTTPStatus.BAD_REQUEST
 
@@ -240,7 +242,7 @@ async def test_supersede_site_control(pg_base_config, admin_client_auth: AsyncCl
 
     # This should be superseding doe 1 (doe1 fully encapsulates it)
     updated_rate = SiteControlRequest(
-        site_id=1,
+        site_group_id=2,
         start_time=datetime(2022, 5, 7, 1, 2, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
         duration_seconds=5,
         calculation_log_id=3,  # This is how we'll look this record up in the DB later
@@ -403,6 +405,173 @@ async def test_get_all_site_controls(
 
 
 @pytest.mark.parametrize(
+    "group, expected_doe_ids",
+    [
+        (None, [1, 2, 3, 4]),
+        ("Group-1", []),
+        ("Group-2", [1, 2, 4]),
+        ("Group-DNE", []),
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_site_controls_group_filter(
+    admin_client_auth: AsyncClient, pg_base_config, group: str | None, expected_doe_ids: list[int]
+):
+    """Checks that the "group" query param filters controls against the parent SiteControlGroup's
+    required_site_group (or null)"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 1).values(required_site_group_id=1)
+        )
+        await session.commit()
+
+    params = {} if group is None else {"group": group}
+    response = await admin_client_auth.get(SiteControlUri.format(group_id=1), params=params)
+    assert response.status_code == HTTPStatus.OK
+
+    site_page: SiteControlPageResponse = SiteControlPageResponse(**json.loads(read_response_body_string(response)))
+    assert site_page.group == group
+    assert site_page.total_count == len(expected_doe_ids)
+    assert expected_doe_ids == [d.site_control_id for d in site_page.controls]
+
+
+@pytest.mark.parametrize(
+    "start_time_since, start_time_until, expected_doe_ids",
+    [
+        (None, None, [1, 2, 3, 4]),
+        ("2022-05-07T03:04:00+10:00", None, [2, 4]),
+        (None, "2022-05-07T03:04:00+10:00", [1, 3]),
+        ("2022-05-07T01:02:00+10:00", "2022-05-08T01:02:00+10:00", [1, 2, 3]),
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_site_controls_start_time_filters(
+    admin_client_auth: AsyncClient,
+    start_time_since: str | None,
+    start_time_until: str | None,
+    expected_doe_ids: list[int],
+):
+    """Checks that start_time_since (inclusive) / start_time_until (exclusive) filter as expected"""
+    params = {}
+    if start_time_since is not None:
+        params["start_time_since"] = start_time_since
+    if start_time_until is not None:
+        params["start_time_until"] = start_time_until
+
+    response = await admin_client_auth.get(SiteControlUri.format(group_id=1), params=params)
+    assert response.status_code == HTTPStatus.OK
+
+    site_page: SiteControlPageResponse = SiteControlPageResponse(**json.loads(read_response_body_string(response)))
+    assert site_page.total_count == len(expected_doe_ids)
+    assert expected_doe_ids == [d.site_control_id for d in site_page.controls]
+
+    if start_time_since is None:
+        assert site_page.start_time_since is None
+    else:
+        assert site_page.start_time_since is not None
+    if start_time_until is None:
+        assert site_page.start_time_until is None
+    else:
+        assert site_page.start_time_until is not None
+
+
+@pytest.mark.parametrize(
+    "site_id, expected_doe_ids",
+    [
+        (None, [1, 2, 3, 4]),
+        (1, [1, 2, 4]),  # site 1 is a member of Group-2 (site_group_id 2) - target of DOEs 1,2,4
+        (2, [3]),  # site 2 is a member of Group-4-Site2 (site_group_id 4) - target of DOE 3
+        (3, []),  # site 3 is not a member of any group targeted by these does
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_site_controls_site_id_filter(
+    admin_client_auth: AsyncClient, site_id: int | None, expected_doe_ids: list[int]
+):
+    """Checks that the site_id query param filters controls to those targeting a group the site is a member of"""
+    params = {} if site_id is None else {"site_id": site_id}
+    response = await admin_client_auth.get(SiteControlUri.format(group_id=1), params=params)
+    assert response.status_code == HTTPStatus.OK
+
+    site_page: SiteControlPageResponse = SiteControlPageResponse(**json.loads(read_response_body_string(response)))
+    assert site_page.site_id == site_id
+    assert site_page.total_count == len(expected_doe_ids)
+    assert expected_doe_ids == [d.site_control_id for d in site_page.controls]
+
+
+@pytest.mark.anyio
+async def test_get_all_site_controls_combined_filters_are_additive(admin_client_auth: AsyncClient, pg_base_config):
+    """Sanity check that group/start_time/site_id filters combine via AND, not OR"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 1).values(required_site_group_id=1)
+        )
+        await session.commit()
+
+    # DOE 1 matches group Group-2, the start_time window and site_id 1 - should be the only match
+    response = await admin_client_auth.get(
+        SiteControlUri.format(group_id=1),
+        params={
+            "group": "Group-2",
+            "start_time_since": "2022-05-07T01:02:00+10:00",
+            "start_time_until": "2022-05-07T03:04:00+10:00",
+            "site_id": 1,
+        },
+    )
+    assert response.status_code == HTTPStatus.OK
+    site_page: SiteControlPageResponse = SiteControlPageResponse(**json.loads(read_response_body_string(response)))
+    assert [1] == [d.site_control_id for d in site_page.controls]
+
+    # Same filters but with a group that doesn't match - should exclude everything
+    response_no_match = await admin_client_auth.get(
+        SiteControlUri.format(group_id=1),
+        params={
+            "group": "Group-1",
+            "start_time_since": "2022-05-07T01:02:00+10:00",
+            "start_time_until": "2022-05-07T03:04:00+10:00",
+            "site_id": 1,
+        },
+    )
+    assert response_no_match.status_code == HTTPStatus.OK
+    site_page_no_match: SiteControlPageResponse = SiteControlPageResponse(
+        **json.loads(read_response_body_string(response_no_match))
+    )
+    assert [] == [d.site_control_id for d in site_page_no_match.controls]
+
+
+@pytest.mark.parametrize(
+    "group, expected_group_ids",
+    [
+        (None, [1, 2, 3]),
+        ("Group-1", [1, 2, 3]),
+        ("Group-2", [2, 3]),
+        ("Group-DNE", [2, 3]),
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_site_control_groups_group_filter(
+    admin_client_auth: AsyncClient, pg_base_config, group: str | None, expected_group_ids: list[int]
+):
+    """Checks that the "group" query param filters SiteControlGroups against required_site_group (or null)"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 1).values(required_site_group_id=1)
+        )
+        await session.commit()
+
+    params = {} if group is None else {"group": group}
+    response = await admin_client_auth.get(SiteControlGroupListUri, params=params)
+    assert response.status_code == HTTPStatus.OK
+
+    group_page: SiteControlGroupPageResponse = SiteControlGroupPageResponse(
+        **json.loads(read_response_body_string(response))
+    )
+    assert group_page.group == group
+    assert group_page.total_count == len(expected_group_ids)
+    assert expected_group_ids == [g.site_control_group_id for g in group_page.site_control_groups]
+
+
+@pytest.mark.parametrize(
     "site_control_group_id, period_start_str, period_end_str, expected_doe_ids",
     [
         (
@@ -471,7 +640,7 @@ async def test_supersede_site_control_different_fields_coexist(pg_base_config, a
 
     # Create first DOE with load_limit
     doe_with_load_limit = SiteControlRequest(
-        site_id=1, start_time=start_time, duration_seconds=300, calculation_log_id=2, load_limit_watts=Decimal(0)
+        site_group_id=2, start_time=start_time, duration_seconds=300, calculation_log_id=2, load_limit_watts=Decimal(0)
     )
 
     resp = await admin_client_auth.post(
@@ -482,7 +651,11 @@ async def test_supersede_site_control_different_fields_coexist(pg_base_config, a
 
     # Create second DOE with import_limit at the same time
     doe_with_import_limit = SiteControlRequest(
-        site_id=1, start_time=start_time, duration_seconds=300, calculation_log_id=3, import_limit_watts=Decimal(5000)
+        site_group_id=2,
+        start_time=start_time,
+        duration_seconds=300,
+        calculation_log_id=3,
+        import_limit_watts=Decimal(5000),
     )
 
     resp = await admin_client_auth.post(
@@ -555,14 +728,22 @@ async def test_supersede_site_control_same_field_does_supersede(pg_base_config, 
 
     # DOE1
     doe1 = SiteControlRequest(
-        site_id=1, start_time=start_time, duration_seconds=300, calculation_log_id=2, import_limit_watts=Decimal(1000)
+        site_group_id=2,
+        start_time=start_time,
+        duration_seconds=300,
+        calculation_log_id=2,
+        import_limit_watts=Decimal(1000),
     )
     resp = await admin_client_auth.post(SiteControlUri.format(group_id=1), content=f"[{doe1.model_dump_json()}]")
     assert resp.status_code == HTTPStatus.CREATED
 
     # DOE2 with import_limit at the same time - should supersede DOE1
     doe2 = SiteControlRequest(
-        site_id=1, start_time=start_time, duration_seconds=300, calculation_log_id=3, import_limit_watts=Decimal(2000)
+        site_group_id=2,
+        start_time=start_time,
+        duration_seconds=300,
+        calculation_log_id=3,
+        import_limit_watts=Decimal(2000),
     )
     resp = await admin_client_auth.post(SiteControlUri.format(group_id=1), content=f"[{doe2.model_dump_json()}]")
     assert resp.status_code == HTTPStatus.CREATED

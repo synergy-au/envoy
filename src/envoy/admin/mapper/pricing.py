@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 
 from envoy_schema.admin.schema.pricing import (
@@ -7,6 +7,7 @@ from envoy_schema.admin.schema.pricing import (
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -24,6 +25,7 @@ class TariffMapper:
             currency_code=tariff.currency_code,
             dnsp_code=tariff.dnsp_code,
             fsa_id=tariff.fsa_id,
+            required_site_group_id=tariff.required_site_group_id,
             price_power_of_ten_multiplier=tariff.price_power_of_ten_multiplier,
             primacy=tariff.primacy,
         )
@@ -42,6 +44,19 @@ class TariffMapper:
                 tariff.price_power_of_ten_multiplier if tariff.price_power_of_ten_multiplier else 0
             ),
             primacy=tariff.primacy,
+            required_site_group_id=tariff.required_site_group_id,
+        )
+
+    @staticmethod
+    def map_to_page_response(
+        total_count: int, limit: int, start: int, group: str | None, tariffs: Iterable[Tariff]
+    ) -> TariffPageResponse:
+        return TariffPageResponse(
+            total_count=total_count,
+            limit=limit,
+            start=start,
+            group=group,
+            tariffs=[TariffMapper.map_to_response(t) for t in tariffs],
         )
 
 
@@ -92,7 +107,7 @@ class TariffGeneratedRateListMapper:
             tariff_generated_rate_id=rate.tariff_generated_rate_id,
             tariff_id=rate.tariff_id,
             tariff_component_id=rate.tariff_component_id,
-            site_id=rate.site_id,
+            site_group_id=rate.site_group_id,
             calculation_log_id=rate.calculation_log_id,
             changed_time=rate.changed_time,
             created_time=rate.created_time,
@@ -115,7 +130,7 @@ class TariffGeneratedRateListMapper:
         return TariffGeneratedRate(
             tariff_id=tariff_id,
             tariff_component_id=rate.tariff_component_id,
-            site_id=rate.site_id,
+            site_group_id=rate.site_group_id,
             calculation_log_id=rate.calculation_log_id,
             changed_time=changed_time,
             start_time=rate.start_time,
@@ -148,17 +163,19 @@ class TariffGeneratedRateListMapper:
         tariff_component_id: int,
         start: int,
         limit: int,
-        period_start: datetime,
-        period_end: datetime,
+        start_time_since: datetime | None,
+        start_time_until: datetime | None,
         site_id: int | None,
+        group: str | None,
     ) -> TariffGeneratedRatePageResponse:
         return TariffGeneratedRatePageResponse(
             total_count=total_count,
             limit=limit,
             start=start,
             tariff_component_id=tariff_component_id,
-            period_start=period_start,
-            period_end=period_end,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
             site_id=site_id,
+            group=group,
             rates=[TariffGeneratedRateListMapper.map_to_single_rate_response(r) for r in rates],
         )

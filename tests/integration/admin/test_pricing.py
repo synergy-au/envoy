@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from http import HTTPStatus
+from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,13 +10,14 @@ from assertical.asserts.time import assert_nowish
 from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
-from envoy_schema.admin.schema.base import BatchCreateResponse
+from envoy_schema.admin.schema.base import BatchCreateCollidableResponse, BatchCreateResponse, OnCollide
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -23,27 +25,61 @@ from envoy_schema.admin.schema.uri import (
     TariffComponentCreateUri,
     TariffComponentListUri,
     TariffComponentUpdateUri,
-    TariffCreateUri,
     TariffGeneratedRateCreateUri,
-    TariffGeneratedRateRangeUri,
+    TariffGeneratedRateListUri,
     TariffGeneratedRateUpdateUri,
+    TariffListUri,
     TariffUpdateUri,
 )
+from envoy_schema.server.schema.sep2.types import CurrencyCode
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
-from envoy.server.api.request import MAX_LIMIT
 from envoy.server.model.archive.tariff import ArchiveTariff, ArchiveTariffComponent, ArchiveTariffGeneratedRate
-from envoy.server.model.tariff import TariffComponent, TariffGeneratedRate
+from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from tests.integration.response import read_response_body_string
 
 
 @pytest.mark.anyio
 async def test_get_all_tariffs(admin_client_auth: AsyncClient):
-    resp = await admin_client_auth.get(TariffCreateUri, params={"limit": 3})
+    resp = await admin_client_auth.get(TariffListUri, params={"limit": 3})
     assert resp.status_code == HTTPStatus.OK
-    tariff_resp_list = [TariffResponse(**d) for d in json.loads(resp.content)]
-    assert len(tariff_resp_list) == 3
+    tariff_page = TariffPageResponse(**json.loads(resp.content))
+    assert len(tariff_page.tariffs) == 3
+    assert tariff_page.limit == 3
+    assert tariff_page.start == 0
+    assert tariff_page.group is None
+    assert tariff_page.total_count == 3
+
+
+@pytest.mark.parametrize(
+    "group, expected_tariff_ids",
+    [
+        (None, [3, 2, 1]),
+        ("Group-1", [3, 1]),  # tariff 1 scoped to Group-1, tariff 3 globally visible
+        ("Group-2", [3, 2]),  # tariff 2 scoped to Group-2, tariff 3 globally visible
+        ("Group-3", [3]),  # only the globally visible tariff
+        ("Group-DNE", [3]),  # only the globally visible tariff
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_tariffs_group_filter(
+    admin_client_auth: AsyncClient, pg_base_config, group: str | None, expected_tariff_ids: list[int]
+):
+    """Sanity check that the "group" query param filters tariffs against their required_site_group (or null)"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(update(Tariff).where(Tariff.tariff_id == 1).values(required_site_group_id=1))
+        await session.execute(update(Tariff).where(Tariff.tariff_id == 2).values(required_site_group_id=2))
+        await session.commit()
+
+    params = {} if group is None else {"group": group}
+    resp = await admin_client_auth.get(TariffListUri, params=params)
+    assert resp.status_code == HTTPStatus.OK
+    tariff_page = TariffPageResponse(**json.loads(resp.content))
+
+    assert tariff_page.group == group
+    assert tariff_page.total_count == len(expected_tariff_ids)
+    assert expected_tariff_ids == [t.tariff_id for t in tariff_page.tariffs]
 
 
 @pytest.mark.anyio
@@ -57,8 +93,9 @@ async def test_get_single_tariff(admin_client_auth: AsyncClient):
 @pytest.mark.anyio
 async def test_create_tariff_with_fetch(admin_client_auth: AsyncClient):
     """Can we create a Tariff and then refetch the thing we just created"""
-    tariff = generate_class_instance(TariffRequest)
-    resp = await admin_client_auth.post(TariffCreateUri, json=tariff.model_dump())
+    tariff = generate_class_instance(TariffRequest, required_site_group_id=None)
+    tariff.currency_code = CurrencyCode.AUSTRALIAN_DOLLAR
+    resp = await admin_client_auth.post(TariffListUri, json=tariff.model_dump())
 
     assert resp.status_code == HTTPStatus.CREATED
 
@@ -79,8 +116,13 @@ async def test_create_tariff_with_fetch(admin_client_auth: AsyncClient):
 @pytest.mark.parametrize(
     "tariff_id, new_values, expected_status",
     [
-        (1, generate_class_instance(TariffRequest), HTTPStatus.NO_CONTENT),
-        (3, generate_class_instance(TariffRequest, optional_is_none=True), HTTPStatus.NO_CONTENT),
+        (1, generate_class_instance(TariffRequest, required_site_group_id=3), HTTPStatus.NO_CONTENT),
+        (1, generate_class_instance(TariffRequest, required_site_group_id=99), HTTPStatus.BAD_REQUEST),  # fk mismatch
+        (
+            3,
+            generate_class_instance(TariffRequest, required_site_group_id=4, optional_is_none=True),
+            HTTPStatus.NO_CONTENT,
+        ),
         (99, generate_class_instance(TariffRequest), HTTPStatus.NOT_FOUND),
     ],
 )
@@ -224,11 +266,11 @@ async def test_update_tariff_component(
 @pytest.mark.anyio
 async def test_create_tariff_genrates_with_fetch(admin_client_auth: AsyncClient):
     tariff_genrate_1 = generate_class_instance(
-        TariffGeneratedRateRequest, seed=101, tariff_component_id=1, site_id=1, calculation_log_id=1
+        TariffGeneratedRateRequest, seed=101, tariff_component_id=1, site_group_id=2, calculation_log_id=1
     )
 
     tariff_genrate_2 = generate_class_instance(
-        TariffGeneratedRateRequest, seed=202, tariff_component_id=2, site_id=2, calculation_log_id=None
+        TariffGeneratedRateRequest, seed=202, tariff_component_id=2, site_group_id=4, calculation_log_id=None
     )
 
     resp = await admin_client_auth.post(
@@ -251,6 +293,172 @@ async def test_create_tariff_genrates_with_fetch(admin_client_auth: AsyncClient)
         assert actual_genrate.tariff_generated_rate_id == new_id
         assert_nowish(actual_genrate.created_time)
         assert_nowish(actual_genrate.changed_time)
+
+
+@pytest.mark.anyio
+async def test_create_tariff_genrates_on_collide_error_default(pg_base_config, admin_client_auth: AsyncClient):
+    """The default (and explicit "error") on_collide behaviour should reject the entire batch (writing nothing) if
+    any entity collides with an existing record on (tariff_component_id, start_time, site_group_id)"""
+
+    async with generate_async_session(pg_base_config) as session:
+        before_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+
+    # Collides with tariff_generated_rate_id 1 (tariff_component_id=1, site_group_id=2, start_time=2022-03-05 01:00+10)
+    colliding_rate = TariffGeneratedRateRequest(
+        tariff_component_id=1,
+        site_group_id=2,
+        start_time=datetime(2022, 3, 5, 1, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
+        duration_seconds=11,
+        calculation_log_id=None,
+        price_pow10_encoded=999999,
+    )
+    new_rate = generate_class_instance(
+        TariffGeneratedRateRequest, seed=303, tariff_component_id=2, site_group_id=2, calculation_log_id=None
+    )
+
+    for query_params in [{}, {"on_collide": str(OnCollide.error)}]:
+        resp = await admin_client_auth.post(
+            TariffGeneratedRateCreateUri,
+            content=f"[{colliding_rate.model_dump_json()}, {new_rate.model_dump_json()}]",
+            headers={"Content-Type": "application/json"},
+            params=query_params,
+        )
+        assert resp.status_code == HTTPStatus.BAD_REQUEST
+
+    # Nothing should have been written
+    async with generate_async_session(pg_base_config) as session:
+        after_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+        archive_count = (
+            await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))
+        ).scalar_one()
+        assert after_count == before_count
+        assert archive_count == 0
+
+
+@pytest.mark.anyio
+async def test_create_tariff_genrates_on_collide_ignore(pg_base_config, admin_client_auth: AsyncClient):
+    """on_collide=ignore should skip (not insert) colliding entities but preserve 1-1 correspondence with -1"""
+
+    async with generate_async_session(pg_base_config) as session:
+        before_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+
+    # Collides with tariff_generated_rate_id 1
+    colliding_rate = TariffGeneratedRateRequest(
+        tariff_component_id=1,
+        site_group_id=2,
+        start_time=datetime(2022, 3, 5, 1, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
+        duration_seconds=11,
+        calculation_log_id=None,
+        price_pow10_encoded=999999,
+    )
+    new_rate = generate_class_instance(
+        TariffGeneratedRateRequest, seed=303, tariff_component_id=2, site_group_id=2, calculation_log_id=None
+    )
+
+    resp = await admin_client_auth.post(
+        TariffGeneratedRateCreateUri,
+        content=f"[{colliding_rate.model_dump_json()}, {new_rate.model_dump_json()}]",
+        headers={"Content-Type": "application/json"},
+        params={"on_collide": OnCollide.ignore},
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    rate_resp = BatchCreateCollidableResponse(**json.loads(resp.content))
+
+    assert rate_resp.on_collide == OnCollide.ignore
+    assert len(rate_resp.ids) == 2
+    assert rate_resp.ids[0] is None, "This entity collided and should've been skipped"
+    assert isinstance(rate_resp.ids[1], int)
+
+    async with generate_async_session(pg_base_config) as session:
+        after_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+        archive_count = (
+            await session.execute(select(func.count()).select_from(ArchiveTariffGeneratedRate))
+        ).scalar_one()
+        assert after_count == before_count + 1, "Only the non-colliding entity should've been inserted"
+        assert archive_count == 0, "Nothing should be cancelled/archived in ignore mode"
+
+        # The original colliding record should remain completely untouched
+        original_rate = (
+            await session.execute(select(TariffGeneratedRate).where(TariffGeneratedRate.tariff_generated_rate_id == 1))
+        ).scalar_one()
+        assert original_rate.price_pow10_encoded == 1111
+
+        new_rate_db = (
+            await session.execute(
+                select(TariffGeneratedRate).where(TariffGeneratedRate.tariff_generated_rate_id == rate_resp.ids[1])
+            )
+        ).scalar_one()
+        assert new_rate_db.tariff_component_id == new_rate.tariff_component_id
+        assert new_rate_db.site_group_id == new_rate.site_group_id
+
+
+@pytest.mark.anyio
+async def test_create_tariff_genrates_on_collide_cancel(pg_base_config, admin_client_auth: AsyncClient):
+    """on_collide=cancel should cancel (archive/delete) any existing colliding entities before inserting"""
+
+    async with generate_async_session(pg_base_config) as session:
+        before_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+
+    # Collides with tariff_generated_rate_id 1
+    colliding_rate = TariffGeneratedRateRequest(
+        tariff_component_id=1,
+        site_group_id=2,
+        start_time=datetime(2022, 3, 5, 1, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
+        duration_seconds=11,
+        calculation_log_id=None,
+        price_pow10_encoded=999999,
+    )
+    new_rate = generate_class_instance(
+        TariffGeneratedRateRequest, seed=303, tariff_component_id=2, site_group_id=2, calculation_log_id=None
+    )
+
+    resp = await admin_client_auth.post(
+        TariffGeneratedRateCreateUri,
+        content=f"[{colliding_rate.model_dump_json()}, {new_rate.model_dump_json()}]",
+        headers={"Content-Type": "application/json"},
+        params={"on_collide": OnCollide.cancel},
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    rate_resp = BatchCreateCollidableResponse(**json.loads(resp.content))
+
+    assert rate_resp.on_collide == OnCollide.cancel
+    assert len(rate_resp.ids) == 2
+    assert all(i != -1 for i in rate_resp.ids), "Both entities should've been inserted with fresh ids"
+    assert 1 not in rate_resp.ids, "The old (cancelled) id should not be reused"
+
+    async with generate_async_session(pg_base_config) as session:
+        after_count = (await session.execute(select(func.count()).select_from(TariffGeneratedRate))).scalar_one()
+        assert after_count == before_count + 1, "1 cancelled + 2 inserted = net +1"
+
+        # Old record 1 should be gone from the live table and archived (as a delete/cancellation)
+        old_record = (
+            await session.execute(
+                select(func.count())
+                .select_from(TariffGeneratedRate)
+                .where(TariffGeneratedRate.tariff_generated_rate_id == 1)
+            )
+        ).scalar_one()
+        assert old_record == 0
+
+        archived = (
+            await session.execute(
+                select(ArchiveTariffGeneratedRate).where(ArchiveTariffGeneratedRate.tariff_generated_rate_id == 1)
+            )
+        ).scalar_one()
+        assert archived.deleted_time is not None
+        assert archived.price_pow10_encoded == 1111, "The archived record should reflect the OLD price"
+
+        # The replacement record should have the new price at the same natural key
+        replacement = (
+            await session.execute(
+                select(TariffGeneratedRate)
+                .where(TariffGeneratedRate.tariff_component_id == 1)
+                .where(TariffGeneratedRate.site_group_id == 2)
+                .where(TariffGeneratedRate.start_time == colliding_rate.start_time)
+            )
+        ).scalar_one()
+        assert replacement.price_pow10_encoded == 999999
+        assert replacement.tariff_generated_rate_id in rate_resp.ids
 
 
 @pytest.mark.parametrize(
@@ -375,7 +583,7 @@ async def test_no_update_tariff_genrate(pg_base_config, admin_client_auth: Async
     # This should overlap tariff_generated_rate_id 1
     updated_rate = TariffGeneratedRateRequest(
         tariff_component_id=1,
-        site_id=1,
+        site_group_id=2,
         start_time=datetime(2022, 3, 5, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
         duration_seconds=1113,
         calculation_log_id=3,
@@ -415,9 +623,6 @@ async def test_no_update_tariff_genrate(pg_base_config, admin_client_auth: Async
         ).scalar_one() == 0, "This should be an insert - no changes in the archive"
 
 
-# --- Tests for GET /tariff/{tariff_id}/tariff_component ---
-
-
 @pytest.mark.parametrize(
     "tariff_id, expected_status, expected_component_ids",
     [
@@ -446,128 +651,124 @@ async def test_get_tariff_components_for_tariff(
             assert c.tariff_id == tariff_id
 
 
-# --- Tests for GET /tariff_component/{tariff_component_id}/tariff_generated_rate/{period_start}/{period_end} ---
+def build_rate_params(
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    group: str | None,
+    start: int | None,
+    limit: int | None,
+    site_id: int | None,
+) -> str:
+    """Builds up a paging query string in the form of ?start={start}&limit={limit} etc."""
 
-# Base config rates (all start on 2022-03-04 UTC = 2022-03-05 +10):
-# Rate 1: TC=1, site=1, start=2022-03-04T15:00:00Z, duration=11s
-# Rate 2: TC=1, site=1, start=2022-03-04T15:00:11Z, duration=22s
-# Rate 3: TC=1, site=1, start=2022-03-04T15:00:33Z, duration=33s
-# Rate 4: TC=1, site=2, start=2022-03-04T15:00:00Z, duration=44s
-# Rate 5: TC=1, site=3, start=2022-03-04T15:00:00Z, duration=55s
-# Rate 6: TC=2, site=1, start=2022-03-04T15:00:00Z, duration=66s
-# Rate 7: TC=4, site=1, start=2022-03-04T15:00:00Z, duration=77s
+    parts: list[str] = []
+    if start is not None:
+        parts.append(f"start={start}")
+    if limit is not None:
+        parts.append(f"limit={limit}")
+    if start_time_since is not None:
+        parts.append(f"start_time_since={quote_plus(start_time_since.isoformat())}")
+    if start_time_until is not None:
+        parts.append(f"start_time_until={quote_plus(start_time_until.isoformat())}")
+    if group is not None:
+        parts.append(f"group={quote_plus(group)}")
+    if site_id is not None:
+        parts.append(f"site_id={site_id}")
 
-# Period covering all rates
-RATE_PERIOD_START = datetime(2022, 3, 4, 14, 0, 0, tzinfo=UTC)
-RATE_PERIOD_END = datetime(2022, 3, 4, 16, 0, 0, tzinfo=UTC)
-
-# Period with no rates
-RATE_PERIOD_EMPTY_START = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
-RATE_PERIOD_EMPTY_END = datetime(2020, 1, 2, 0, 0, 0, tzinfo=UTC)
-
-# TC#1 rates ordered by (start_time ASC, site_id ASC):
-# rate 1 (site=1, T15:00:00Z), rate 4 (site=2, T15:00:00Z), rate 5 (site=3, T15:00:00Z),
-# rate 2 (site=1, T15:00:11Z), rate 3 (site=1, T15:00:33Z)
-TC1_RATE_IDS_ORDERED = [1, 4, 5, 2, 3]
-
-
-GET_RATE_TEST_CASES = [
-    # (tariff_component_id, start, limit, period_start, period_end, site_id, expected_rate_ids, expected_total)
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, TC1_RATE_IDS_ORDERED, 5),  # TC#1 all rates
-    (2, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [6], 1),  # TC#2 single rate
-    (4, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [7], 1),  # TC#4 single rate
-    (3, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [], 0),  # TC#3 no rates
-    (1, 0, 999, RATE_PERIOD_EMPTY_START, RATE_PERIOD_EMPTY_END, None, [], 0),  # Empty period
-    (1, 0, 2, RATE_PERIOD_START, RATE_PERIOD_END, None, [1, 4], 5),  # Pagination: first page
-    (1, 2, 2, RATE_PERIOD_START, RATE_PERIOD_END, None, [5, 2], 5),  # Pagination: second page
-    (1, 999, 999, RATE_PERIOD_START, RATE_PERIOD_END, None, [], 5),  # Pagination: past end
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 1, [1, 2, 3], 3),  # Site filter: site 1
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 2, [4], 1),  # Site filter: site 2
-    (1, 0, 999, RATE_PERIOD_START, RATE_PERIOD_END, 999, [], 0),  # Site filter: no match
-]
+    return "?" + "&".join(parts)
 
 
 @pytest.mark.parametrize(
-    "tariff_component_id, start, limit, period_start, period_end, site_id, expected_rate_ids, expected_total",
-    GET_RATE_TEST_CASES,
+    "tariff_component_id,start_time_since,start_time_until,group,site_id,start,limit,expected_ids,expected_count",
+    [
+        (99, None, None, None, None, None, 100, [], 0),  # basic filter
+        (1, None, None, None, None, None, 100, [1, 2, 3, 4, 5], 5),  # basic filter
+        (1, None, None, None, None, 1, 2, [2, 3], 5),  # paging
+        (2, None, None, None, None, None, 100, [6], 1),
+        (3, None, None, None, None, None, 100, [], 0),
+        (1, None, None, None, 99, None, 100, [], 0),  # site DNE
+        (1, None, None, None, 1, None, 100, [1, 2, 3], 3),
+        (1, None, None, "Group-2", None, None, 100, [1, 2, 3], 3),
+        (1, None, None, "Group-DNE", None, None, 100, [], 0),
+        (1, datetime(2000, 1, 1, tzinfo=UTC), datetime(2001, 1, 1, tzinfo=UTC), None, None, None, 100, [], 0),
+        (
+            1,
+            datetime(2000, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1, tzinfo=UTC),
+            None,
+            None,
+            None,
+            100,
+            [1, 2, 3, 4, 5],
+            5,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 11, tzinfo=UTC),
+            None,
+            None,
+            None,
+            0,
+            100,
+            [2, 3],
+            2,
+        ),
+        (
+            1,
+            datetime(2022, 3, 4, 15, 0, 0, tzinfo=UTC),
+            datetime(2022, 3, 4, 15, 0, 33, tzinfo=UTC),
+            "Group-2",
+            1,
+            0,
+            100,
+            [1, 2],
+            2,
+        ),
+    ],
 )
 @pytest.mark.anyio
-async def test_get_tariff_generated_rates_for_period(
+async def test_get_tariff_generated_rates_filtered(
     admin_client_auth: AsyncClient,
-    pg_base_config,
     tariff_component_id: int,
-    start: int,
-    limit: int,
-    period_start: datetime,
-    period_end: datetime,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    group: str | None,
+    start: int | None,
+    limit: int | None,
     site_id: int | None,
-    expected_rate_ids: list[int],
-    expected_total: int,
+    expected_ids: list[int],
+    expected_count: int,
 ):
-    """Test GET /tariff_component/{cid}/tariff_generated_rate/{period_start}/{period_end}"""
-
-    url = TariffGeneratedRateRangeUri.format(
-        tariff_component_id=tariff_component_id,
-        period_start=period_start.isoformat(),
-        period_end=period_end.isoformat(),
+    """Tests fetching and filtering tariff rates"""
+    url = TariffGeneratedRateListUri.format(tariff_component_id=tariff_component_id) + build_rate_params(
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        start=start,
+        limit=limit,
+        site_id=site_id,
+        group=group,
     )
-    params = f"?start={start}&limit={limit}"
-    if site_id is not None:
-        params += f"&site_id={site_id}"
+    resp = await admin_client_auth.get(url)
+    assert resp.status_code == HTTPStatus.OK
 
-    response = await admin_client_auth.get(url + params)
-    assert response.status_code == HTTPStatus.OK
+    response_page = TariffGeneratedRatePageResponse(**json.loads(resp.content))
 
-    body = read_response_body_string(response)
-    assert len(body) > 0
-    page = TariffGeneratedRatePageResponse(**json.loads(body))
+    assert response_page.group == group
+    assert response_page.start_time_since == start_time_since
+    assert response_page.start_time_until == start_time_until
+    assert response_page.site_id == site_id
+    assert response_page.tariff_component_id == tariff_component_id
 
-    if limit >= MAX_LIMIT:
-        assert page.limit == MAX_LIMIT
+    if limit is None:
+        assert isinstance(response_page.limit, int) and response_page.limit > 0
     else:
-        assert page.limit == limit
-    assert page.start == start
-    assert page.tariff_component_id == tariff_component_id
-    assert page.total_count == expected_total
-    assert page.site_id == site_id
-    assert_list_type(TariffGeneratedRateResponse, page.rates, len(expected_rate_ids))
-    assert expected_rate_ids == [r.tariff_generated_rate_id for r in page.rates]
+        assert response_page.limit == limit
 
+    if start is None:
+        assert isinstance(response_page.start, int) and response_page.start == 0
+    else:
+        assert response_page.start == start
 
-@pytest.mark.anyio
-async def test_get_tariff_generated_rates_unknown_component(admin_client_auth: AsyncClient):
-    """Unknown tariff_component_id returns 404."""
-    url = TariffGeneratedRateRangeUri.format(
-        tariff_component_id=99,
-        period_start=RATE_PERIOD_START.isoformat(),
-        period_end=RATE_PERIOD_END.isoformat(),
-    )
-    assert (await admin_client_auth.get(url)).status_code == HTTPStatus.NOT_FOUND
-
-
-@pytest.mark.anyio
-async def test_get_tariff_generated_rates_response_fields(admin_client_auth: AsyncClient, pg_base_config):
-    """Verify response fields for a known rate match the base config data."""
-
-    url = TariffGeneratedRateRangeUri.format(
-        tariff_component_id=1,
-        period_start=RATE_PERIOD_START.isoformat(),
-        period_end=RATE_PERIOD_END.isoformat(),
-    )
-    response = await admin_client_auth.get(url + "?start=0&limit=1")
-    assert response.status_code == HTTPStatus.OK
-
-    page = TariffGeneratedRatePageResponse(**json.loads(read_response_body_string(response)))
-    assert len(page.rates) == 1
-    assert page.tariff_component_id == 1
-
-    rate = page.rates[0]
-    assert rate.tariff_generated_rate_id == 1
-    assert rate.tariff_id == 1
-    assert rate.tariff_component_id == 1
-    assert rate.site_id == 1
-    assert rate.calculation_log_id == 2
-    assert rate.duration_seconds == 11
-    assert rate.price_pow10_encoded == 1111
-    assert rate.block_1_start_pow10_encoded == 1000
-    assert rate.price_pow10_encoded_block_1 == 1001
+    assert response_page.total_count == expected_count
+    assert_list_type(TariffGeneratedRateResponse, response_page.rates, count=len(expected_ids))
+    assert expected_ids == [r.tariff_generated_rate_id for r in response_page.rates]

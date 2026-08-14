@@ -17,7 +17,7 @@ from envoy.server.model.archive.site import ArchiveSite
 from envoy.server.model.archive.site_reading import ArchiveSiteReading, ArchiveSiteReadingType
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup
-from envoy.server.model.site import Site
+from envoy.server.model.site import Site, SiteGroup
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from tests.unit.server.model.archive.test_archive_models import find_paired_archive_classes
@@ -211,7 +211,7 @@ async def test_delete_rows_into_archive_no_matches(
             (
                 (ot, at)
                 for ot, at in find_paired_archive_classes()
-                if ot not in {Site, SiteReadingType, SiteControlGroup}
+                if ot not in {Site, SiteReadingType, SiteControlGroup, SiteGroup}
             ),
             [True, False],
         )
@@ -349,7 +349,7 @@ async def test_delete_rows_into_archive_cascade_deletes(pg_base_config):
             DynamicOperatingEnvelope,
             ArchiveDynamicOperatingEnvelope,
             deleted_time,
-            lambda q: q.where(DynamicOperatingEnvelope.site_id == 1),
+            lambda q: q.where(DynamicOperatingEnvelope.site_group_id == 2),
         )
 
         await delete_rows_into_archive(
@@ -357,7 +357,7 @@ async def test_delete_rows_into_archive_cascade_deletes(pg_base_config):
             TariffGeneratedRate,
             ArchiveTariffGeneratedRate,
             deleted_time,
-            lambda q: q.where(TariffGeneratedRate.site_id == 1),
+            lambda q: q.where(TariffGeneratedRate.site_group_id == 2),
         )
 
         await delete_rows_into_archive(

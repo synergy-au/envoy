@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from http import HTTPStatus
+from urllib.parse import quote_plus
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -21,13 +22,14 @@ from envoy_schema.admin.schema.uri import (
     ServerConfigRuntimeUri,
     SiteControlGroupDefaultUri,
     SiteControlGroupListUri,
+    SiteControlRangeUri,
     SiteControlUri,
     SiteUri,
     TariffComponentCreateUri,
     TariffComponentUpdateUri,
-    TariffCreateUri,
     TariffGeneratedRateCreateUri,
     TariffGeneratedRateUpdateUri,
+    TariffListUri,
     TariffUpdateUri,
 )
 from httpx import AsyncClient
@@ -35,6 +37,7 @@ from sqlalchemy import delete, insert, select
 
 from envoy.notification.task.transmit import HEADER_NOTIFICATION_ID
 from envoy.server.api.response import SEP_XML_MIME
+from envoy.server.model import DynamicOperatingEnvelope
 from envoy.server.model.server import RuntimeServerConfig
 from envoy.server.model.subscription import Subscription, SubscriptionResource
 from envoy.server.model.tariff import Tariff, TariffComponent
@@ -56,10 +59,10 @@ async def test_create_site_controls_no_active_subscription(
         await session.commit()
 
     site_control_request_1 = generate_class_instance(SiteControlRequest)
-    site_control_request_1.site_id = 1
+    site_control_request_1.site_group_id = 2
 
     site_control_request_2 = generate_class_instance(SiteControlRequest, seed=123, optional_is_none=True)
-    site_control_request_2.site_id = 2
+    site_control_request_2.site_group_id = 4
 
     resp = await admin_client_auth.post(
         uri, content=f"[{site_control_request_1.model_dump_json()}, {site_control_request_2.model_dump_json()}]"
@@ -115,10 +118,10 @@ async def test_create_site_controls_with_active_subscription(
 
         await session.commit()
 
-    control_1 = generate_class_instance(SiteControlRequest, seed=10001, site_id=1, calculation_log_id=None)
-    control_2 = generate_class_instance(SiteControlRequest, seed=20002, site_id=1, calculation_log_id=1)
-    control_3 = generate_class_instance(SiteControlRequest, seed=30003, site_id=2, calculation_log_id=1)
-    control_4 = generate_class_instance(SiteControlRequest, seed=40004, site_id=3, calculation_log_id=None)
+    control_1 = generate_class_instance(SiteControlRequest, seed=10001, site_group_id=2, calculation_log_id=None)
+    control_2 = generate_class_instance(SiteControlRequest, seed=20002, site_group_id=2, calculation_log_id=1)
+    control_3 = generate_class_instance(SiteControlRequest, seed=30003, site_group_id=4, calculation_log_id=1)
+    control_4 = generate_class_instance(SiteControlRequest, seed=40004, site_group_id=5, calculation_log_id=None)
 
     content = ",".join([d.model_dump_json() for d in [control_1, control_2, control_3, control_4]])
     resp = await admin_client_auth.post(
@@ -197,6 +200,147 @@ async def test_create_site_controls_with_active_subscription(
 
 
 @pytest.mark.anyio
+async def test_cancel_site_controls_with_active_subscription(
+    admin_client_auth: AsyncClient, notifications_enabled: MockedAsyncClient, pg_base_config
+):
+    """Tests cancelling SiteControls with an active subscription generates notifications via the MockedAsyncClient"""
+    uri = SiteControlUri.format(group_id=1)
+
+    now = datetime.now(UTC)
+    start = now + timedelta(minutes=5)
+    duration = 300
+    end = start + timedelta(seconds=duration)
+
+    # Create a subscription to actually pickup these changes
+    subscription1_uri = "http://my.example:542/uri"
+    subscription2_uri = "https://my.other.example:542/uri"
+    async with generate_async_session(pg_base_config) as session:
+        # Clear any other subs/does first - we want our cancelled does to be in the future
+        await session.execute(delete(Subscription))
+        await session.execute(delete(DynamicOperatingEnvelope))
+        await session.execute(
+            insert(DynamicOperatingEnvelope).values(
+                site_control_group_id=1,
+                site_group_id=1,  # Accessible to site 1/2/3
+                calculation_log_id=None,
+                changed_time=now,
+                start_time=start,
+                duration_seconds=duration,
+                end_time=end,
+                randomize_start_seconds=None,
+                import_limit_active_watts=Decimal(4321),
+                superseded=False,
+            )
+        )
+        await session.execute(
+            insert(DynamicOperatingEnvelope).values(
+                site_control_group_id=1,
+                site_group_id=4,  # Accessible to site 2
+                calculation_log_id=None,
+                changed_time=now,
+                start_time=start,
+                duration_seconds=duration,
+                end_time=end,
+                randomize_start_seconds=None,
+                export_limit_watts=Decimal(5432),
+                superseded=False,
+            )
+        )
+
+        # this is scoped to site1
+        await session.execute(
+            insert(Subscription).values(
+                aggregator_id=1,
+                changed_time=datetime.now(),
+                resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
+                resource_id=1,  # derp 1
+                scoped_site_id=1,
+                notification_uri=subscription1_uri,
+                entity_limit=10,
+            )
+        )
+
+        # This is scoped to site2
+        await session.execute(
+            insert(Subscription).values(
+                aggregator_id=1,
+                changed_time=datetime.now(),
+                resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
+                resource_id=1,  # derp 1
+                scoped_site_id=2,
+                notification_uri=subscription2_uri,
+                entity_limit=10,
+            )
+        )
+
+        await session.commit()
+
+    uri = SiteControlRangeUri.format(
+        group_id=1, period_start=quote_plus(start.isoformat()), period_end=quote_plus(end.isoformat())
+    )
+    resp = await admin_client_auth.delete(uri)
+    assert resp.status_code == HTTPStatus.NO_CONTENT
+
+    # Give the notifications a chance to propagate
+    assert await notifications_enabled.wait_for_n_requests(n=2, timeout_seconds=30)
+    await asyncio.sleep(1)  # let any trailing notifications have a chance to arrive
+
+    # Control 1 maps to group 1 which means group1 will be notified (site 1,2,3)
+    #   (One for sub1 (site1), one for sub2 (site2))
+    # Control 2 maps to group 4 which means ONLY site 2 will be notified
+    #   (one for sub2 (site2))
+    #
+    # The sub2 Notifications will be delivered in a single unit so we have 2 notifications with 3 DERControls
+    assert notifications_enabled.call_count_by_method[HTTPMethod.GET] == 0
+    assert notifications_enabled.call_count_by_method[HTTPMethod.POST] == 2
+    assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription1_uri)] == 1
+    assert notifications_enabled.call_count_by_method_uri[(HTTPMethod.POST, subscription2_uri)] == 1
+
+    assert all([HEADER_NOTIFICATION_ID in r.headers_dict for r in notifications_enabled.logged_requests])
+    assert len(set([r.headers_dict[HEADER_NOTIFICATION_ID] for r in notifications_enabled.logged_requests])) == len(
+        notifications_enabled.logged_requests
+    ), "Expected unique notification ids for each request"
+
+    # Do a really simple content check on the outgoing XML to ensure the notifications contain the expected
+    # entities for each subscription
+    assert (
+        len(
+            [
+                r
+                for r in notifications_enabled.logged_requests
+                if r.uri == subscription1_uri
+                and r.content is not None
+                and "<value>4321</value>" in r.content  # First derc
+                and "<value>5432</value>" not in r.content  # second derc
+                and "/edev/1/derp/1/derc" in r.content  # For edev 1
+                and "<currentStatus>2</currentStatus>" in r.content  # DERControl is "cancelled"
+                and "<status>0</status>" in r.content  # NotificationStatus DEFAULT
+                and r.content.count("</DERControl>") == 1  # Single DERControl
+            ]
+        )
+        == 1
+    ), "Only one notification (for sub 1) site1 derc1"
+
+    assert (
+        len(
+            [
+                r
+                for r in notifications_enabled.logged_requests
+                if r.uri == subscription2_uri
+                and r.content is not None
+                and "<value>4321</value>" in r.content  # First derc
+                and "<value>5432</value>" in r.content  # second derc
+                and "/edev/2/derp/1/derc" in r.content  # For edev 2
+                and r.content.count("<currentStatus>2</currentStatus>") == 2  # DERControls are "cancelled"
+                and "<status>0</status>" in r.content  # NotificationStatus DEFAULT
+                and r.content.count("</DERControl>") == 2  # Two DERControls
+            ]
+        )
+        == 1
+    ), "Only one notification with 2 DERControls (for sub 2) site2 derc1"
+
+
+@pytest.mark.anyio
 async def test_supersede_site_control_with_active_subscription(
     admin_client_auth: AsyncClient, notifications_enabled: MockedAsyncClient, pg_base_config
 ):
@@ -231,7 +375,7 @@ async def test_supersede_site_control_with_active_subscription(
     control_1 = generate_class_instance(
         SiteControlRequest,
         seed=10001,
-        site_id=1,
+        site_group_id=2,
         calculation_log_id=None,
         start_time=datetime(2022, 5, 7, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         export_limit_watts=100,
@@ -306,10 +450,10 @@ async def test_create_does_with_paginated_notifications(
 
         await session.commit()
 
-    control_1 = generate_class_instance(SiteControlRequest, seed=101, site_id=1, calculation_log_id=None)
-    control_2 = generate_class_instance(SiteControlRequest, seed=202, site_id=1, calculation_log_id=None)
-    control_3 = generate_class_instance(SiteControlRequest, seed=303, site_id=1, calculation_log_id=None)
-    control_4 = generate_class_instance(SiteControlRequest, seed=404, site_id=3, calculation_log_id=None)
+    control_1 = generate_class_instance(SiteControlRequest, seed=101, site_group_id=2, calculation_log_id=None)
+    control_2 = generate_class_instance(SiteControlRequest, seed=202, site_group_id=2, calculation_log_id=None)
+    control_3 = generate_class_instance(SiteControlRequest, seed=303, site_group_id=2, calculation_log_id=None)
+    control_4 = generate_class_instance(SiteControlRequest, seed=404, site_group_id=5, calculation_log_id=None)
 
     content = ",".join([d.model_dump_json() for d in [control_1, control_2, control_3, control_4]])
     resp = await admin_client_auth.post(
@@ -791,13 +935,13 @@ async def test_create_tariff_with_active_subscription(
         await session.commit()
 
     # Will match Sub 1/2
-    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1)
-    resp = await admin_client_auth.post(TariffCreateUri, content=t_1.model_dump_json())
+    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1, required_site_group_id=None)
+    resp = await admin_client_auth.post(TariffListUri, content=t_1.model_dump_json())
     assert resp.status_code == HTTPStatus.CREATED
 
     # Will only match Sub 1 (due to the fsa_id)
-    t_2 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff2", fsa_id=2)
-    resp = await admin_client_auth.post(TariffCreateUri, content=t_2.model_dump_json())
+    t_2 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff2", fsa_id=2, required_site_group_id=None)
+    resp = await admin_client_auth.post(TariffListUri, content=t_2.model_dump_json())
     assert resp.status_code == HTTPStatus.CREATED
 
     # Give the notifications a chance to propagate
@@ -904,12 +1048,12 @@ async def test_update_tariff_with_active_subscription(
         await session.commit()
 
     # Will match Sub 1/2
-    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1)
+    t_1 = generate_class_instance(TariffRequest, seed=101, dnsp_code="mytariff1", fsa_id=1, required_site_group_id=None)
     resp = await admin_client_auth.put(TariffUpdateUri.format(tariff_id=1), content=t_1.model_dump_json())
     assert resp.status_code == HTTPStatus.NO_CONTENT
 
     # Will only match Sub 1 (due to the fsa_id)
-    t_3 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff3", fsa_id=2)
+    t_3 = generate_class_instance(TariffRequest, seed=202, dnsp_code="mytariff3", fsa_id=2, required_site_group_id=None)
     resp = await admin_client_auth.put(TariffUpdateUri.format(tariff_id=3), content=t_3.model_dump_json())
     assert resp.status_code == HTTPStatus.NO_CONTENT
 
@@ -1052,7 +1196,7 @@ async def test_create_rates_with_active_subscription(
     rate_1 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=101,
-        site_id=1,
+        site_group_id=2,  # Group-2, site1's singleton group per base_config.sql
         tariff_component_id=1,
         start_time=datetime(2022, 3, 4, 14, 0, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=1,
@@ -1062,7 +1206,7 @@ async def test_create_rates_with_active_subscription(
     rate_2 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=202,
-        site_id=3,
+        site_group_id=5,
         tariff_component_id=1,
         start_time=datetime(2022, 3, 4, 14, 5, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=None,
@@ -1072,7 +1216,7 @@ async def test_create_rates_with_active_subscription(
     rate_3 = generate_class_instance(
         TariffGeneratedRateRequest,
         seed=303,
-        site_id=1,
+        site_group_id=2,  # Group-2, site1's singleton group per base_config.sql
         tariff_component_id=4,
         start_time=datetime(2022, 3, 4, 14, 10, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
         calculation_log_id=None,
@@ -1234,7 +1378,8 @@ async def test_delete_rates_with_active_subscription(
                 and "<subscribedResource>/edev/1/tp/1/ctti</subscribedResource>" in r.content
                 and "<subscribedResource>/edev/1/tp/1/rc/1/tti</subscribedResource>" not in r.content
                 and "<price>1111</price>" in r.content
-                and "<currentStatus>2</currentStatus>" in r.content  # Cancelled
+                and "<status>0</status>"  # Notification status is Default
+                and "<currentStatus>2</currentStatus>" in r.content  # EventStatus is Cancelled
             ]
         )
         == 1
@@ -1250,7 +1395,8 @@ async def test_delete_rates_with_active_subscription(
                 and "<subscribedResource>/edev/1/tp/1/ctti</subscribedResource>" not in r.content
                 and "<subscribedResource>/edev/1/tp/1/rc/1/tti</subscribedResource>" in r.content
                 and "<price>1111</price>" in r.content
-                and "<currentStatus>2</currentStatus>" in r.content  # Cancelled
+                and "<status>0</status>"  # Notification status is Default
+                and "<currentStatus>2</currentStatus>" in r.content  # EventStatus is Cancelled
             ]
         )
         == 1

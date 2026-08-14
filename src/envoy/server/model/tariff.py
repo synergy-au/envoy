@@ -11,11 +11,21 @@ from envoy_schema.server.schema.sep2.types import (
     RoleFlagsType,
     UomType,
 )
-from sqlalchemy import INTEGER, VARCHAR, BigInteger, DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import (
+    INTEGER,
+    VARCHAR,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from envoy.server.model import Base
-from envoy.server.model.site import Site
+from envoy.server.model import Base, SiteGroup
 
 
 class Tariff(Base):
@@ -34,6 +44,9 @@ class Tariff(Base):
     fsa_id: Mapped[int] = mapped_column(
         Integer, index=True, server_default="1"
     )  # Function set assignment ID that will group this Tariff with other Tariffs
+    required_site_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("site_group.site_group_id"), nullable=True, index=True
+    )  # If set - only sites that are members of this SiteGroup will "see" this Tariff. Otherwise globally visible
 
     created_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -92,7 +105,9 @@ class TariffGeneratedRate(Base):
     tariff_component_id: Mapped[int] = mapped_column(
         ForeignKey("tariff_component.tariff_component_id")
     )  # The parent component that describes uom being priced
-    site_id: Mapped[int] = mapped_column(ForeignKey("site.site_id"))  # The site that this rate applies to
+    site_group_id: Mapped[int] = mapped_column(
+        ForeignKey("site_group.site_group_id")
+    )  # The SiteGroup whose member sites this rate applies to
 
     calculation_log_id: Mapped[int | None] = mapped_column(
         ForeignKey("calculation_log.calculation_log_id"), nullable=True, index=True
@@ -131,19 +146,25 @@ class TariffGeneratedRate(Base):
     )  # When the rate was created/changed
 
     tariff_component: Mapped["TariffComponent"] = relationship(back_populates="tariff_generated_rates", lazy="raise")
-    site: Mapped["Site"] = relationship(lazy="raise")
+    site_group: Mapped[SiteGroup] = relationship(lazy="raise")
 
     __table_args__ = (
         Index(
-            "ix_tariff_generated_rate_tariff_component_id_end_time_site_id",
+            "ix_tariff_generated_rate_tariff_component_id_end_time_group_id",
             "tariff_component_id",
             "end_time",
-            "site_id",
+            "site_group_id",
         ),  # Used by the primary csip-aus DERControl list endpoint (for fetching via RateComponents)
         Index(
-            "ix_tariff_generated_rate_tariff_id_end_time_site_id",
+            "ix_tariff_generated_rate_tariff_id_end_time_site_group_id",
             "tariff_id",
             "end_time",
-            "site_id",
+            "site_group_id",
         ),  # Used by the primary csip-aus DERControl list endpoint (for fetching via Tariff)
+        UniqueConstraint(
+            "tariff_component_id",
+            "start_time",
+            "site_group_id",
+            name="uc_tariff_generated_rate_component_id_start_time_site_group_id",
+        ),  # Only one rate can be active for a given TariffComponent/SiteGroup at a given start_time
     )

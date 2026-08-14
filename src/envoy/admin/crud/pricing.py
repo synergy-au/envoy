@@ -1,7 +1,10 @@
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any, TypeVar
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import Select, func, insert, select, tuple_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.server.crud.archive import copy_rows_into_archive, delete_rows_into_archive
@@ -36,6 +39,7 @@ async def update_single_tariff(session: AsyncSession, updated_tariff: Tariff, ch
     tariff.dnsp_code = updated_tariff.dnsp_code
     tariff.name = updated_tariff.name
     tariff.currency_code = updated_tariff.currency_code
+    tariff.required_site_group_id = updated_tariff.required_site_group_id
     tariff.fsa_id = updated_tariff.fsa_id
     tariff.primacy = updated_tariff.primacy
     tariff.price_power_of_ten_multiplier = updated_tariff.price_power_of_ten_multiplier
@@ -102,6 +106,81 @@ async def insert_many_tariff_genrate(
     return insert_ids.scalars().all()
 
 
+async def insert_many_tariff_genrate_ignore_collisions(
+    session: AsyncSession, tariff_genrates: list[TariffGeneratedRate]
+) -> list[int | None]:
+    """Inserts multiple tariff generated rate entries into the DB. Any entry that collides with an existing record
+    on the (tariff_component_id, start_time, site_group_id) unique constraint will be silently skipped (NOT
+    inserted/updated).
+
+    Returns a list of IDs that is the same length/order as tariff_genrates - each element being EITHER the newly
+    inserted tariff_generated_rate_id OR COLLISION_ID_PLACEHOLDER if that entry collided with an existing record
+    and was therefore skipped."""
+
+    if not tariff_genrates:
+        return []
+
+    table = TariffGeneratedRate.__table__
+    insert_cols = [c.name for c in table.c if c not in list(table.primary_key.columns) and not c.server_default]  # ty:ignore[unresolved-attribute]
+
+    stmt = (
+        pg_insert(TariffGeneratedRate)
+        .values([{k: getattr(r, k) for k in insert_cols} for r in tariff_genrates])
+        .on_conflict_do_nothing(index_elements=["tariff_component_id", "start_time", "site_group_id"])
+        .returning(
+            TariffGeneratedRate.tariff_generated_rate_id,
+            TariffGeneratedRate.tariff_component_id,
+            TariffGeneratedRate.start_time,
+            TariffGeneratedRate.site_group_id,
+        )
+    )
+    inserted_rows = (await session.execute(stmt)).all()
+
+    # Rows that collided simply won't appear in inserted_rows - we match returned rows back to their originating
+    # request (by natural key) to preserve the 1-1 correspondence expected by the caller.
+    ids_by_key: dict[tuple[int, datetime, int], list[int]] = defaultdict(list)
+    for rate_id, tariff_component_id, start_time, site_group_id in inserted_rows:
+        ids_by_key[(tariff_component_id, start_time, site_group_id)].append(rate_id)
+
+    result: list[int | None] = []
+    for r in tariff_genrates:
+        candidate_ids = ids_by_key.get((r.tariff_component_id, r.start_time, r.site_group_id))
+        if candidate_ids:
+            result.append(candidate_ids.pop(0))
+        else:
+            result.append(None)
+
+    return result
+
+
+async def cancel_colliding_tariff_generated_rates(
+    session: AsyncSession, tariff_genrates: Iterable[TariffGeneratedRate], deleted_time: datetime
+) -> None:
+    """Finds any existing TariffGeneratedRate that collides (on the (tariff_component_id, start_time, site_group_id)
+    unique constraint) with any of the specified tariff_genrates and cancels (deletes/archives) it with the
+    specified deleted_time.
+
+    If no rows collide - this will have no effect."""
+
+    keys = [(r.tariff_component_id, r.start_time, r.site_group_id) for r in tariff_genrates]
+    if not keys:
+        return
+
+    await delete_rows_into_archive(
+        session,
+        TariffGeneratedRate,
+        ArchiveTariffGeneratedRate,
+        deleted_time,
+        lambda q: q.where(
+            tuple_(
+                TariffGeneratedRate.tariff_component_id,
+                TariffGeneratedRate.start_time,
+                TariffGeneratedRate.site_group_id,
+            ).in_(keys)
+        ),
+    )
+
+
 async def select_tariff_ids_for_component_ids(
     session: AsyncSession, tariff_component_ids: Iterable[int]
 ) -> dict[int, int]:
@@ -124,6 +203,69 @@ async def select_single_tariff_generated_rate(
         select(TariffGeneratedRate).where(TariffGeneratedRate.tariff_generated_rate_id == tariff_generated_rate_id)
     )
     return resp.scalar_one_or_none()
+
+
+T = TypeVar("T", bound=tuple[Any, ...])
+
+
+def _filtered_tariff_generated_rates(
+    stmt: Select[T],
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+) -> Select[T]:
+
+    stmt = stmt.where(TariffGeneratedRate.tariff_component_id == tariff_component_id)
+    if start_time_since is not None:
+        stmt = stmt.where(TariffGeneratedRate.start_time >= start_time_since)
+    if start_time_until is not None:
+        stmt = stmt.where(TariffGeneratedRate.start_time < start_time_until)
+    if site_group_ids is not None:
+        stmt = stmt.where(TariffGeneratedRate.site_group_id.in_(site_group_ids))
+    return stmt
+
+
+async def select_filtered_tariff_generated_rates(
+    session: AsyncSession,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+    start: int,
+    limit: int,
+) -> Sequence[TariffGeneratedRate]:
+    """Fetches TariffGeneratedRate that meet the specified criteria"""
+
+    stmt = select(TariffGeneratedRate).order_by(TariffGeneratedRate.tariff_generated_rate_id).limit(limit).offset(start)
+    stmt = _filtered_tariff_generated_rates(
+        stmt,
+        tariff_component_id=tariff_component_id,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_group_ids=site_group_ids,
+    )
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def count_filtered_tariff_generated_rates(
+    session: AsyncSession,
+    tariff_component_id: int,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    site_group_ids: set[int] | None,
+) -> int:
+    """Provides the count of records returned from select_filtered_tariff_generated_rates"""
+
+    stmt = select(func.count()).select_from(TariffGeneratedRate)
+    stmt = _filtered_tariff_generated_rates(
+        stmt,
+        tariff_component_id=tariff_component_id,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_group_ids=site_group_ids,
+    )
+    return (await session.execute(stmt)).scalar_one()
 
 
 async def cancel_and_delete_tariff_component(
@@ -163,60 +305,6 @@ async def cancel_tariff_generated_rate(
         deleted_time,
         lambda q: q.where(TariffGeneratedRate.tariff_generated_rate_id == tariff_generated_rate_id),
     )
-
-
-async def count_tariff_generated_rates_for_period(
-    session: AsyncSession,
-    tariff_component_id: int,
-    period_start: datetime,
-    period_end: datetime,
-    site_id: int | None = None,
-) -> int:
-    """Count tariff generated rates for a specific TariffComponent where start_time falls within
-    [period_start, period_end)."""
-    stmt = (
-        select(func.count())
-        .select_from(TariffGeneratedRate)
-        .where(
-            (TariffGeneratedRate.tariff_component_id == tariff_component_id)
-            & (TariffGeneratedRate.start_time >= period_start)
-            & (TariffGeneratedRate.start_time < period_end)
-        )
-    )
-    if site_id is not None:
-        stmt = stmt.where(TariffGeneratedRate.site_id == site_id)
-    result = await session.execute(stmt)
-    return result.scalar_one()
-
-
-async def select_tariff_generated_rates_for_period(
-    session: AsyncSession,
-    tariff_component_id: int,
-    start: int,
-    limit: int,
-    period_start: datetime,
-    period_end: datetime,
-    site_id: int | None = None,
-) -> Sequence[TariffGeneratedRate]:
-    """Select tariff generated rates for a specific TariffComponent where start_time falls within
-    [period_start, period_end).
-
-    Ordered by start_time ASC, site_id ASC for deterministic pagination."""
-    stmt = (
-        select(TariffGeneratedRate)
-        .where(
-            (TariffGeneratedRate.tariff_component_id == tariff_component_id)
-            & (TariffGeneratedRate.start_time >= period_start)
-            & (TariffGeneratedRate.start_time < period_end)
-        )
-        .order_by(TariffGeneratedRate.start_time.asc(), TariffGeneratedRate.site_id.asc())
-        .offset(start)
-        .limit(limit)
-    )
-    if site_id is not None:
-        stmt = stmt.where(TariffGeneratedRate.site_id == site_id)
-    result = await session.execute(stmt)
-    return result.scalars().all()
 
 
 async def select_tariff_components_for_tariff(
