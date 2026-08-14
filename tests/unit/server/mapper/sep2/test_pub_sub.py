@@ -696,10 +696,11 @@ def test_NotificationMapper_map_rates_to_response(notification_type: Notificatio
     sub = generate_class_instance(Subscription, seed=303)
     scope = generate_class_instance(AggregatorRequestScope, seed=1001, href_prefix="/custom/prefix")
     tariff_id = 888
+    site_id = 54321
     now = datetime(2021, 5, 7, tzinfo=UTC)
 
     notification = NotificationMapper.map_rates_to_response(
-        tariff_id, tariff_component_id, [rate1, rate2], sub, scope, notification_type, now
+        tariff_id, site_id, tariff_component_id, [rate1, rate2], sub, scope, notification_type, now
     )
     assert isinstance(notification, Notification)
     assert notification.subscribedResource.startswith("/custom/prefix")
@@ -724,7 +725,7 @@ def test_NotificationMapper_map_rates_to_response(notification_type: Notificatio
     assert_list_type(TimeTariffIntervalResponse, notification.resource.TimeTariffInterval, count=2)
     assert_entity_hrefs_contain_entity_id_and_prefix(
         [e.href for e in notification.resource.TimeTariffInterval],  # type: ignore
-        [rate1.site_id, rate2.site_id],
+        [site_id, site_id],
         scope.href_prefix,  # type: ignore
     )
 

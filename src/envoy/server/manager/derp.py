@@ -18,7 +18,7 @@ from envoy.server.crud.doe import (
     select_site_control_group_by_id,
     select_site_control_groups,
 )
-from envoy.server.crud.site import select_single_site_with_site_id
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.exception import NotFoundError
 from envoy.server.manager.server import RuntimeServerConfigManager
 from envoy.server.manager.time import utc_now
@@ -50,16 +50,26 @@ class DERProgramManager:
 
         now = utc_now()
 
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if not site:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
 
         config = await RuntimeServerConfigManager.fetch_current_config(session)
 
         site_control_groups = await select_site_control_groups(
-            session, start=start, limit=limit, changed_after=changed_after, fsa_id=fsa_id, include_defaults=True
+            session,
+            start=start,
+            limit=limit,
+            changed_after=changed_after,
+            fsa_id=fsa_id,
+            site_group_ids=site_group_ids,
+            include_defaults=True,
         )
-        site_control_group_count = await count_site_control_groups(session, changed_after, fsa_id=fsa_id)
+        site_control_group_count = await count_site_control_groups(
+            session, changed_after, site_group_ids=site_group_ids, fsa_id=fsa_id
+        )
         control_counts_by_group: list[tuple[SiteControlGroup, int]] = []
         for group in site_control_groups:
             control_counts_by_group.append(
@@ -68,7 +78,7 @@ class DERProgramManager:
                     await count_active_does_include_deleted(
                         session,
                         site_control_group_id=group.site_control_group_id,
-                        site=site,
+                        site_group_ids=site_group_ids,
                         now=now,
                         changed_after=datetime.min,  # We want total count - don't reduce it based on changed_after
                     ),
@@ -93,16 +103,20 @@ class DERProgramManager:
 
         if site_id DNE is inaccessible to aggregator_id a NotFoundError will be raised"""
 
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
-        if not site:
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
             raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
 
-        site_control_group = await select_site_control_group_by_id(session, der_program_id, include_default=True)
-        if not site_control_group:
+        site_control_group = await select_site_control_group_by_id(
+            session, der_program_id, site_group_ids=site_group_ids, include_default=True
+        )
+        if site_control_group is None:
             raise NotFoundError(f"der_program_id {der_program_id} is not accessible / does not exist")
 
         now = utc_now()
-        total_does = await count_active_does_include_deleted(session, der_program_id, site, now, datetime.min)
+        total_does = await count_active_does_include_deleted(session, der_program_id, site_group_ids, now, datetime.min)
         return DERProgramMapper.doe_program_response(
             scope, total_does, site_control_group, site_control_group.site_control_group_default
         )
@@ -139,15 +153,19 @@ class DERControlManager:
 
         now = utc_now()
 
-        site = await select_single_site_with_site_id(session, scope.site_id, scope.aggregator_id)
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
         does: list[DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope]
         total_count: int
-        if site:
+        if site_group_ids is not None:
             # site is accessible to the current scope - perform fetch query
             does = await select_active_does_include_deleted(
-                session, der_program_id, site, now, start, changed_after, limit
+                session, der_program_id, site_group_ids, now, start, changed_after, limit
             )
-            total_count = await count_active_does_include_deleted(session, der_program_id, site, now, changed_after)
+            total_count = await count_active_does_include_deleted(
+                session, der_program_id, site_group_ids, now, changed_after
+            )
         else:
             # Site isn't in scope - return empty list
             does = []
@@ -179,12 +197,18 @@ class DERControlManager:
         for iterating active DOE's (i.e their timerange intersects with now) stored against a particular site"""
 
         now = utc_now()
-        does = await select_does_at_timestamp(
-            session, der_program_id, scope.aggregator_id, scope.site_id, now, start, changed_after, limit
+
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
         )
-        total_count = await count_does_at_timestamp(
-            session, der_program_id, scope.aggregator_id, scope.site_id, now, changed_after
-        )
+        if site_group_ids is not None:
+            does = await select_does_at_timestamp(
+                session, der_program_id, site_group_ids, now, start, changed_after, limit
+            )
+            total_count = await count_does_at_timestamp(session, der_program_id, site_group_ids, now, changed_after)
+        else:
+            does = []
+            total_count = 0
 
         # fetch runtime server config
         config = await RuntimeServerConfigManager.fetch_current_config(session)
@@ -207,7 +231,15 @@ class DERControlManager:
     ) -> DefaultDERControl:
         """Returns a default DOE control for DERProgram - raises an error if the referenced DERProgram DNE"""
 
-        scg = await select_site_control_group_by_id(session, der_program_id, include_default=True)
+        site_group_ids = await fetch_site_group_membership(
+            session, aggregator_id=scope.aggregator_id, site_id=scope.site_id
+        )
+        if site_group_ids is None:
+            raise NotFoundError(f"site_id {scope.site_id} is not accessible / does not exist")
+
+        scg = await select_site_control_group_by_id(
+            session, der_program_id, include_default=True, site_group_ids=site_group_ids
+        )
         if not scg:
             raise NotFoundError(f"DERProgram {der_program_id} for site {scope.site_id} is not accessible / missing.")
 

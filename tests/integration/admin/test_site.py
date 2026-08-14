@@ -5,23 +5,45 @@ from urllib.parse import quote_plus
 
 import pytest
 from assertical.asserts.time import assert_nowish
+from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
 from envoy_schema.admin.schema.site import SitePageResponse, SiteResponse, SiteUpdateRequest
-from envoy_schema.admin.schema.site_group import SiteGroupPageResponse, SiteGroupResponse
-from envoy_schema.admin.schema.uri import SiteGroupListUri, SiteGroupUri, SiteListUri, SiteUri
+from envoy_schema.admin.schema.site_group import (
+    SiteGroupAssignmentPageResponse,
+    SiteGroupAssignmentRequest,
+    SiteGroupAssignmentResponse,
+    SiteGroupPageResponse,
+    SiteGroupRequest,
+    SiteGroupResponse,
+)
+from envoy_schema.admin.schema.uri import (
+    SiteGroupAssignmentsListUri,
+    SiteGroupAssignmentsUri,
+    SiteGroupListUri,
+    SiteGroupUri,
+    SiteListUri,
+    SiteUri,
+)
 from envoy_schema.server.schema.sep2.types import DeviceCategory
 from httpx import AsyncClient
 from sqlalchemy import func, select
 
-from envoy.admin.crud.site import count_all_site_groups, count_all_sites
+from envoy.admin.crud.site import count_all_site_group_assignments, count_all_site_groups, count_all_sites
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
-from envoy.server.model.archive.site import ArchiveSite
+from envoy.server.model.archive.site import ArchiveSite, ArchiveSiteGroupAssignment
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
-from envoy.server.model.site import Site
+from envoy.server.model.site import Site, SiteGroup, SiteGroupAssignment
 from tests.integration.response import read_response_body_string
 
 
-def _build_query_string(start: int | None, limit: int | None, group_filter: str | None, after: datetime | None) -> str:
+def _build_query_string(
+    start: int | None,
+    limit: int | None,
+    group_filter: str | None,
+    after: datetime | None,
+    nmi_filter: str | None = None,
+    aggregator_id_filter: int | None = None,
+) -> str:
     query = "?"
     if start is not None:
         query = query + f"&start={start}"
@@ -31,6 +53,10 @@ def _build_query_string(start: int | None, limit: int | None, group_filter: str 
         query = query + f"&group={group_filter}"
     if after is not None:
         query = query + f"&after={quote_plus(after.isoformat())}"
+    if nmi_filter is not None:
+        query = query + f"&nmi={nmi_filter}"
+    if aggregator_id_filter is not None:
+        query = query + f"&aggregator_id={aggregator_id_filter}"
     return query
 
 
@@ -181,15 +207,58 @@ async def test_get_all_sites(
 
 
 @pytest.mark.parametrize(
+    "group, nmi, aggregator_id, expected_site_ids",
+    [
+        (None, None, None, [1, 2, 3, 4, 5, 6]),
+        (None, "1111111111", None, [1]),
+        (None, "9999999999", None, []),
+        (None, None, 1, [1, 2, 4]),
+        (None, None, 0, [5, 6]),
+        (None, None, 99, []),
+        ("Group-1", None, 1, [1, 2]),  # additive AND: Group-1 members that are aggregator 1
+        ("Group-1", "1111111111", 1, [1]),  # additive AND: all three filters combine
+        ("Group-1", "1111111111", 2, []),  # additive AND: aggregator doesn't match -> no results
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_sites_nmi_aggregator_filters(
+    admin_client_auth: AsyncClient,
+    pg_base_config,
+    group: str | None,
+    nmi: str | None,
+    aggregator_id: int | None,
+    expected_site_ids: list[int],
+):
+    """Checks the nmi/aggregator_id query params filter as expected, and combine additively (AND) with group"""
+    async with generate_async_session(pg_base_config) as session:
+        expected_total_sites = await count_all_sites(
+            session, group, None, nmi_filter=nmi, aggregator_id_filter=aggregator_id
+        )
+
+    response = await admin_client_auth.get(
+        SiteListUri + _build_query_string(None, None, group, None, nmi_filter=nmi, aggregator_id_filter=aggregator_id)
+    )
+    assert response.status_code == HTTPStatus.OK
+
+    body = read_response_body_string(response)
+    site_page: SitePageResponse = SitePageResponse(**json.loads(body))
+
+    assert site_page.total_count == expected_total_sites
+    assert site_page.nmi == nmi
+    assert site_page.aggregator_id == aggregator_id
+    assert [s.site_id for s in site_page.sites] == expected_site_ids
+
+
+@pytest.mark.parametrize(
     "start, limit, expected_group_count",
     [
-        (None, None, [(1, 3), (2, 1), (3, 0)]),
-        (None, 10, [(1, 3), (2, 1), (3, 0)]),
+        (None, None, [(1, 3), (2, 1), (3, 0), (4, 1), (5, 1)]),
+        (None, 10, [(1, 3), (2, 1), (3, 0), (4, 1), (5, 1)]),
         (None, 2, [(1, 3), (2, 1)]),
         (1, 2, [(2, 1), (3, 0)]),
-        (2, 2, [(3, 0)]),
-        (3, 2, []),
-        (3, None, []),
+        (2, 2, [(3, 0), (4, 1)]),
+        (3, 2, [(4, 1), (5, 1)]),
+        (3, None, [(4, 1), (5, 1)]),
     ],
 )
 @pytest.mark.anyio
@@ -226,6 +295,7 @@ async def test_get_all_site_groups(
         assert group_page.start == start
 
     assert [(g.site_group_id, g.total_sites) for g in group_page.groups] == expected_group_count
+    assert all(g.default_group is False for g in group_page.groups), "No groups are marked default in base_config"
 
 
 @pytest.mark.parametrize(
@@ -259,6 +329,7 @@ async def test_get_site_groups(
         assert group.site_group_id == expected_group_count[0]
         assert group.total_sites == expected_group_count[1]
         assert group.name == group_name
+        assert group.default_group is False, "No groups are marked default in base_config"
 
 
 @pytest.mark.parametrize(
@@ -299,9 +370,11 @@ async def test_get_site(
 @pytest.mark.parametrize(
     "site_id, expected_status, archive_site_count, archive_doe_count, archive_price_count",
     [
-        (1, HTTPStatus.NO_CONTENT, 1, 3, 5),
-        (2, HTTPStatus.NO_CONTENT, 1, 1, 1),
-        (3, HTTPStatus.NO_CONTENT, 1, 0, 1),
+        # DOEs/TariffGeneratedRates are no longer archived/deleted as a side effect of deleting a site - both now
+        # target a SiteGroup (which may have other member sites still relying on it), not this Site directly.
+        (1, HTTPStatus.NO_CONTENT, 1, 0, 0),
+        (2, HTTPStatus.NO_CONTENT, 1, 0, 0),
+        (3, HTTPStatus.NO_CONTENT, 1, 0, 0),
         (4, HTTPStatus.NO_CONTENT, 1, 0, 0),
         (5, HTTPStatus.NO_CONTENT, 1, 0, 0),
         (99, HTTPStatus.NOT_FOUND, 0, 0, 0),
@@ -458,3 +531,217 @@ async def test_update_site_archives(
             assert actual_site.device_category == expected_device_category
             assert actual_site.timezone_id == expected_tz
             assert_nowish(actual_site.changed_time)
+
+
+@pytest.mark.anyio
+async def test_create_group(admin_client_auth: AsyncClient, pg_base_config):
+    group_request = generate_class_instance(SiteGroupRequest, name="A Brand New Group", default_group=False)
+    resp = await admin_client_auth.post(SiteGroupListUri, content=group_request.model_dump_json())
+    assert resp.status_code == HTTPStatus.CREATED
+
+    location = resp.headers["Location"]
+    assert location == SiteGroupUri.format(group_name=group_request.name)
+
+    async with generate_async_session(pg_base_config) as session:
+        created_group = (
+            await session.execute(select(SiteGroup).where(SiteGroup.name == group_request.name))
+        ).scalar_one()
+        assert created_group.default_group == group_request.default_group
+        assert_nowish(created_group.changed_time)
+
+    # And it's now visible via the single group GET
+    get_resp = await admin_client_auth.get(SiteGroupUri.format(group_name=group_request.name))
+    assert get_resp.status_code == HTTPStatus.OK
+    group_response = SiteGroupResponse(**json.loads(read_response_body_string(get_resp)))
+    assert group_response.name == group_request.name
+    assert group_response.total_sites == 0
+
+
+@pytest.mark.anyio
+async def test_create_group_duplicate_name(admin_client_auth: AsyncClient, pg_base_config):
+    group_request = generate_class_instance(SiteGroupRequest, name="Group-1", default_group=False)
+    resp = await admin_client_auth.post(SiteGroupListUri, content=group_request.model_dump_json())
+    assert resp.status_code == HTTPStatus.BAD_REQUEST
+
+    async with generate_async_session(pg_base_config) as session:
+        assert (await count_all_site_groups(session)) == 5, "No new group should've been created"
+
+
+@pytest.mark.parametrize(
+    "group_name, start, limit, expected_assignment_ids, expected_site_ids",
+    [
+        ("Group-1", None, None, [1, 2, 3], [1, 2, 3]),
+        ("Group-1", 1, None, [2, 3], [2, 3]),
+        ("Group-1", None, 2, [1, 2], [1, 2]),
+        ("Group-1", 1, 1, [2], [2]),
+        ("Group-2", None, None, [4], [1]),
+        ("Group-3", None, None, [], []),
+        ("Group-DNE", None, None, None, None),
+    ],
+)
+@pytest.mark.anyio
+async def test_get_all_group_assignments(
+    admin_client_auth: AsyncClient,
+    pg_base_config,
+    group_name: str,
+    start: int | None,
+    limit: int | None,
+    expected_assignment_ids: list[int] | None,
+    expected_site_ids: list[int] | None,
+):
+    params = {}
+    if start is not None:
+        params["start"] = start
+    if limit is not None:
+        params["limit"] = limit
+
+    resp = await admin_client_auth.get(SiteGroupAssignmentsListUri.format(group_name=group_name), params=params)
+
+    if expected_assignment_ids is None:
+        assert resp.status_code == HTTPStatus.NOT_FOUND
+        return
+
+    assert resp.status_code == HTTPStatus.OK
+    page = SiteGroupAssignmentPageResponse(**json.loads(read_response_body_string(resp)))
+    assert all(isinstance(a, SiteGroupAssignmentResponse) for a in page.assignments)
+    assert [a.site_group_assignment_id for a in page.assignments] == expected_assignment_ids
+    assert [a.site_id for a in page.assignments] == expected_site_ids
+
+    async with generate_async_session(pg_base_config) as session:
+        group = (await session.execute(select(SiteGroup).where(SiteGroup.name == group_name))).scalar_one()
+        expected_total = await count_all_site_group_assignments(session, group.site_group_id)
+    assert page.total_count == expected_total
+
+
+@pytest.mark.parametrize(
+    "group_name, site_group_assignment_id, expected_site_id",
+    [
+        ("Group-1", 1, 1),
+        ("Group-1", 2, 2),
+        ("Group-2", 4, 1),
+        ("Group-1", 4, None),  # assignment 4 belongs to Group-2, not Group-1
+        ("Group-1", 9999, None),
+        ("Group-DNE", 1, None),
+    ],
+)
+@pytest.mark.anyio
+async def test_get_group_assignment(
+    admin_client_auth: AsyncClient, group_name: str, site_group_assignment_id: int, expected_site_id: int | None
+):
+    resp = await admin_client_auth.get(
+        SiteGroupAssignmentsUri.format(group_name=group_name, site_group_assignment_id=site_group_assignment_id)
+    )
+
+    if expected_site_id is None:
+        assert resp.status_code == HTTPStatus.NOT_FOUND
+    else:
+        assert resp.status_code == HTTPStatus.OK
+        assignment = SiteGroupAssignmentResponse(**json.loads(read_response_body_string(resp)))
+        assert assignment.site_group_assignment_id == site_group_assignment_id
+        assert assignment.site_id == expected_site_id
+
+
+@pytest.mark.anyio
+async def test_create_group_assignment(admin_client_auth: AsyncClient, pg_base_config):
+    assignment_request = SiteGroupAssignmentRequest(site_id=6)
+    resp = await admin_client_auth.post(
+        SiteGroupAssignmentsListUri.format(group_name="Group-3"), content=assignment_request.model_dump_json()
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+
+    location = resp.headers["Location"]
+    [assignments_uri, new_id] = location.rsplit("/", maxsplit=1)
+    assert assignments_uri == SiteGroupAssignmentsListUri.format(group_name="Group-3")
+    assert int(new_id) > 6
+
+    async with generate_async_session(pg_base_config) as session:
+        group = (await session.execute(select(SiteGroup).where(SiteGroup.name == "Group-3"))).scalar_one()
+        created = (
+            await session.execute(
+                select(SiteGroupAssignment).where(
+                    SiteGroupAssignment.site_group_assignment_id == int(new_id),
+                )
+            )
+        ).scalar_one()
+        assert created.site_id == 6
+        assert created.site_group_id == group.site_group_id
+        assert_nowish(created.changed_time)
+
+
+@pytest.mark.anyio
+async def test_create_group_assignment_group_not_found(admin_client_auth: AsyncClient):
+    assignment_request = SiteGroupAssignmentRequest(site_id=1)
+    resp = await admin_client_auth.post(
+        SiteGroupAssignmentsListUri.format(group_name="Group-DNE"), content=assignment_request.model_dump_json()
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.parametrize("site_id", [1, 9999])  # 1 is already a member of Group-1, 9999 doesn't exist
+@pytest.mark.anyio
+async def test_create_group_assignment_bad_request(admin_client_auth: AsyncClient, pg_base_config, site_id: int):
+    assignment_request = SiteGroupAssignmentRequest(site_id=site_id)
+    resp = await admin_client_auth.post(
+        SiteGroupAssignmentsListUri.format(group_name="Group-1"), content=assignment_request.model_dump_json()
+    )
+    assert resp.status_code == HTTPStatus.BAD_REQUEST
+
+    async with generate_async_session(pg_base_config) as session:
+        group = (await session.execute(select(SiteGroup).where(SiteGroup.name == "Group-1"))).scalar_one()
+        assert (await count_all_site_group_assignments(session, group.site_group_id)) == 3, (
+            "No new assignment should've been created"
+        )
+
+
+@pytest.mark.anyio
+async def test_delete_group_assignment(admin_client_auth: AsyncClient, pg_base_config):
+    resp = await admin_client_auth.delete(
+        SiteGroupAssignmentsUri.format(group_name="Group-1", site_group_assignment_id=1)
+    )
+    assert resp.status_code == HTTPStatus.NO_CONTENT
+
+    async with generate_async_session(pg_base_config) as session:
+        remaining = (
+            await session.execute(select(SiteGroupAssignment).where(SiteGroupAssignment.site_group_assignment_id == 1))
+        ).scalar_one_or_none()
+        assert remaining is None
+
+        archived = (
+            await session.execute(
+                select(ArchiveSiteGroupAssignment).where(
+                    ArchiveSiteGroupAssignment.site_group_assignment_id == 1,
+                    ArchiveSiteGroupAssignment.deleted_time.is_not(None),
+                )
+            )
+        ).scalar_one()
+        assert archived.site_id == 1
+        assert archived.site_group_id == 1
+        assert archived.deleted_time is not None
+        assert_nowish(archived.deleted_time)
+
+    # Subsequent delete/get now both 404
+    resp = await admin_client_auth.delete(
+        SiteGroupAssignmentsUri.format(group_name="Group-1", site_group_assignment_id=1)
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+    resp = await admin_client_auth.get(SiteGroupAssignmentsUri.format(group_name="Group-1", site_group_assignment_id=1))
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "group_name, site_group_assignment_id",
+    [
+        ("Group-1", 9999),  # assignment DNE
+        ("Group-1", 4),  # assignment exists but belongs to Group-2
+        ("Group-DNE", 1),  # group DNE
+    ],
+)
+@pytest.mark.anyio
+async def test_delete_group_assignment_not_found(
+    admin_client_auth: AsyncClient, group_name: str, site_group_assignment_id: int
+):
+    resp = await admin_client_auth.delete(
+        SiteGroupAssignmentsUri.format(group_name=group_name, site_group_assignment_id=site_group_assignment_id)
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND

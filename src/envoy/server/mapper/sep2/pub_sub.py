@@ -730,6 +730,7 @@ class NotificationMapper:
     @staticmethod
     def map_rates_to_response(
         tariff_id: int,
+        site_id: int,
         tariff_component_id: int | None,
         rates: Sequence[TariffGeneratedRate],
         sub: Subscription,
@@ -737,7 +738,9 @@ class NotificationMapper:
         notification_type: NotificationType,
         now: datetime,
     ) -> Notification:
-        """Turns a list of dynamic prices into a notification"""
+        """Turns a list of dynamic prices into a notification
+
+        site_id: The specific member site this batch of rates is being notified for"""
 
         if tariff_component_id is None:
             time_tariff_interval_list_href = generate_href(
@@ -764,7 +767,7 @@ class NotificationMapper:
                 href=time_tariff_interval_list_href,
                 all_=len(rates),
                 results=len(rates),
-                TimeTariffInterval=[TimeTariffIntervalMapper.map_to_response(scope, now, r) for r in rates],
+                TimeTariffInterval=[TimeTariffIntervalMapper.map_to_response(scope, now, r, site_id) for r in rates],
             ),
         )
 

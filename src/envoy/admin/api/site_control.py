@@ -92,6 +92,7 @@ async def get_all_site_control_groups(
     start: list[int] = Query([0]),
     limit: list[int] = Query([100]),
     after: datetime | None = Query(None),
+    group: list[str] = Query([]),
 ) -> SiteControlGroupPageResponse:
     """Endpoint for a paginated list of SiteControlGroupResponse Objects, ordered by the site_control_group_id
     attribute.
@@ -100,22 +101,29 @@ async def get_all_site_control_groups(
         start: start index value (for pagination). Default 0.
         limit: maximum number of objects to return. Default 100. Max 500.
         after: Filters objects that have been created/modified from this timestamp (inclusive). Default no filter.
+        group: SiteGroup name by which to filter returned groups (matches required_site_group against the named
+            SiteGroup OR any group with a null required_site_group). Default no filter.
 
     Returns:
         SiteControlGroupPageResponse
     """
+    group_filter: str | None = None
+    if group is not None and len(group) > 0:
+        group_filter = group[0]
+
     return await SiteControlGroupManager.get_all_site_control_groups(
         session=db.session,
         start=extract_start_from_paging_param(start),
         limit=extract_limit_from_paging_param(limit),
         changed_after=after,
+        group_filter=group_filter,
     )
 
 
 @router.post(SiteControlUri, status_code=HTTPStatus.CREATED, response_model=None)
 async def create_site_controls(group_id: int, control_list: list[SiteControlRequest]) -> BatchCreateResponse:
     """Bulk creation of 'Site Controls' under a site control group. Each SiteControlRequest is associated
-    with a Site object via the site_id attribute.
+    with a SiteGroup object via the site_group_id attribute (applying to every member site).
 
     Body:
         List of SiteControlRequest objects.
@@ -130,7 +138,7 @@ async def create_site_controls(group_id: int, control_list: list[SiteControlRequ
             logger, exc, HTTPStatus.BAD_REQUEST, "The request contains duplicate instances"
         ) from exc
     except IntegrityError as exc:
-        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "site_id not found") from exc
+        raise LoggedHttpException(logger, exc, HTTPStatus.BAD_REQUEST, "site_group_id not found") from exc
 
 
 @router.get(SiteControlUri, status_code=HTTPStatus.OK, response_model=SiteControlPageResponse)
@@ -139,6 +147,10 @@ async def get_all_site_controls(
     start: list[int] = Query([0]),
     limit: list[int] = Query([100]),
     after: datetime | None = Query(None),
+    group: list[str] = Query([]),
+    start_time_since: datetime | None = Query(None),
+    start_time_until: datetime | None = Query(None),
+    site_id: int | None = Query(None),
 ) -> SiteControlPageResponse:
     """Endpoint for a paginated list of SiteControlResponse Objects, ordered by site_control_id
     attribute.
@@ -147,16 +159,30 @@ async def get_all_site_controls(
         start: start index value (for pagination). Default 0.
         limit: maximum number of objects to return. Default 100. Max 500.
         after: Filters objects that have been created/modified from this timestamp (inclusive). Default no filter.
+        group: SiteGroup name by which to filter returned controls (matches the parent SiteControlGroup's
+            required_site_group against the named SiteGroup OR any SiteControlGroup with a null
+            required_site_group). Default no filter.
+        start_time_since: Filters controls whose start_time is >= this timestamp (inclusive). Default no filter.
+        start_time_until: Filters controls whose start_time is < this timestamp (exclusive). Default no filter.
+        site_id: Filters controls to those targeting a SiteGroup that this site is a member of. Default no filter.
 
     Returns:
         SiteControlPageResponse
     """
+    group_filter: str | None = None
+    if group is not None and len(group) > 0:
+        group_filter = group[0]
+
     return await SiteControlListManager.get_all_site_controls(
         session=db.session,
         site_control_group_id=group_id,
         start=extract_start_from_paging_param(start),
         limit=extract_limit_from_paging_param(limit),
         changed_after=after,
+        group_filter=group_filter,
+        start_time_since=start_time_since,
+        start_time_until=start_time_until,
+        site_id=site_id,
     )
 
 
@@ -170,7 +196,11 @@ async def delete_site_controls_in_range(group_id: int, period_start: datetime, p
     """
 
     await SiteControlListManager.delete_site_controls_in_range(
-        db.session, site_control_group_id=group_id, site_id=None, period_start=period_start, period_end=period_end
+        db.session,
+        site_control_group_id=group_id,
+        site_group_id=None,
+        period_start=period_start,
+        period_end=period_end,
     )
 
 

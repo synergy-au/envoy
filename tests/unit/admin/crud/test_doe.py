@@ -19,7 +19,7 @@ from envoy.admin.crud.doe import (
     delete_does_with_start_time_in_range,
     select_all_does,
     select_all_site_control_groups,
-    supersede_matching_does_for_site,
+    supersede_matching_does_for_group,
     supersede_then_insert_does,
 )
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
@@ -44,7 +44,7 @@ async def test_cancel_then_insert_does_inserts(pg_base_config):
     deleted_time = datetime(2022, 11, 4, 7, 4, 2, tzinfo=UTC)
     async with generate_async_session(pg_base_config) as session:
         doe_in: DynamicOperatingEnvelope = generate_class_instance(
-            DynamicOperatingEnvelope, generate_relationships=False, site_id=1, site_control_group_id=1
+            DynamicOperatingEnvelope, generate_relationships=False, site_group_id=2, site_control_group_id=1
         )
         # clean up generated instance to ensure it doesn't clash with base_config
         del doe_in.dynamic_operating_envelope_id
@@ -71,7 +71,7 @@ async def test_cancel_then_insert_does_inserts(pg_base_config):
 
         doe_in_1 = generate_class_instance(
             DynamicOperatingEnvelope,
-            site_id=1,
+            site_group_id=2,
             start_time=doe_in.start_time + timedelta(seconds=1),
             site_control_group_id=1,
         )
@@ -92,12 +92,12 @@ async def test_cancel_then_insert_does_update(pg_base_config):
     original_doe_copy: DynamicOperatingEnvelope
     async with generate_async_session(pg_base_config) as session:
         original_doe = await _select_latest_dynamic_operating_envelope(session)
-        original_doe_copy = clone_class_instance(original_doe, ignored_properties={"site", "site_control_group"})
+        original_doe_copy = clone_class_instance(original_doe, ignored_properties={"site_control_group"})
 
         # clean up generated instance to ensure it doesn't clash with base_config
         doe_to_update: DynamicOperatingEnvelope = clone_class_instance(
             original_doe,
-            ignored_properties={"dynamic_operating_envelope_id", "created_time", "site", "site_control_group"},
+            ignored_properties={"dynamic_operating_envelope_id", "created_time", "site_control_group"},
         )
         assert doe_to_update.export_limit_watts is not None
         assert doe_to_update.import_limit_active_watts is not None
@@ -117,7 +117,7 @@ async def test_cancel_then_insert_does_update(pg_base_config):
             DynamicOperatingEnvelope,
             doe_to_update,
             doe_after_update,
-            ignored_properties={"dynamic_operating_envelope_id", "created_time", "site", "site_control_group"},
+            ignored_properties={"dynamic_operating_envelope_id", "created_time", "site_control_group"},
         )
         assert_nowish(doe_after_update.created_time)
 
@@ -133,13 +133,13 @@ async def test_cancel_then_insert_does_update(pg_base_config):
         assert archive_data.deleted_time == deleted_time
 
 
-def doe(start_time: datetime, end_time: datetime, scg_id: int = 1, site_id: int = 1) -> DynamicOperatingEnvelope:
+def doe(start_time: datetime, end_time: datetime, scg_id: int = 1, site_group_id: int = 2) -> DynamicOperatingEnvelope:
     return generate_class_instance(
         DynamicOperatingEnvelope,
         dynamic_operating_envelope_id=None,
         start_time=start_time,
         end_time=end_time,
-        site_id=site_id,
+        site_group_id=site_group_id,
         site_control_group_id=scg_id,
     )
 
@@ -207,15 +207,17 @@ def doe(start_time: datetime, end_time: datetime, scg_id: int = 1, site_id: int 
         (
             [
                 doe(
-                    datetime(2022, 5, 7, 1, 2, 1, tzinfo=AEST), datetime(2022, 5, 7, 1, 2, 10, tzinfo=AEST), site_id=3
+                    datetime(2022, 5, 7, 1, 2, 1, tzinfo=AEST),
+                    datetime(2022, 5, 7, 1, 2, 10, tzinfo=AEST),
+                    site_group_id=5,
                 ),  # encapsulated by doe 1
             ],
-            [],  # site 3 doesn't have a doe at this time - there's nothing to supersede
+            [],  # site_group_id 5 doesn't have a doe at this time - there's nothing to supersede
         ),
     ],
 )
 @pytest.mark.anyio
-async def test_supersede_matching_does_for_site(
+async def test_supersede_matching_does_for_group(
     pg_base_config, doe_list: list[DynamicOperatingEnvelope], expected_doe_update_ids: list[int]
 ):
     async with generate_async_session(pg_base_config) as session:
@@ -240,15 +242,17 @@ async def test_supersede_matching_does_for_site(
         )
         await session.commit()
 
-    site_id = 99
+    site_group_id = 99
     if len(doe_list) > 0:
-        site_id = doe_list[0].site_id
+        site_group_id = doe_list[0].site_group_id
 
     all_site_control_group_ids = [1, 2, 3]
     changed_time = datetime(2021, 11, 4, 2, 3, 4, tzinfo=UTC)
 
     async with generate_async_session(pg_base_config) as session:
-        await supersede_matching_does_for_site(session, doe_list, site_id, all_site_control_group_ids, changed_time)
+        await supersede_matching_does_for_group(
+            session, doe_list, site_group_id, all_site_control_group_ids, changed_time
+        )
         await session.commit()
 
     # Assert
@@ -272,10 +276,10 @@ async def test_supersede_matching_does_for_site(
             assert doe.deleted_time is None, "Should be an update - not a delete"
 
 
-@mock.patch("envoy.admin.crud.doe.supersede_matching_does_for_site")
+@mock.patch("envoy.admin.crud.doe.supersede_matching_does_for_group")
 @pytest.mark.anyio
 async def test_supersede_then_insert_does_many_sites(
-    mock_supersede_matching_does_for_site: mock.MagicMock, pg_base_config
+    mock_supersede_matching_does_for_group: mock.MagicMock, pg_base_config
 ):
     async with generate_async_session(pg_base_config) as session:
         original_doe_count = (
@@ -290,7 +294,7 @@ async def test_supersede_then_insert_does_many_sites(
             DynamicOperatingEnvelope,
             seed=101,
             dynamic_operating_envelope_id=None,
-            site_id=1,
+            site_group_id=1,
             calculation_log_id=None,
             site_control_group_id=1,
         ),
@@ -298,7 +302,7 @@ async def test_supersede_then_insert_does_many_sites(
             DynamicOperatingEnvelope,
             seed=202,
             dynamic_operating_envelope_id=None,
-            site_id=1,
+            site_group_id=1,
             calculation_log_id=None,
             site_control_group_id=2,
         ),
@@ -306,7 +310,7 @@ async def test_supersede_then_insert_does_many_sites(
             DynamicOperatingEnvelope,
             seed=303,
             dynamic_operating_envelope_id=None,
-            site_id=2,
+            site_group_id=2,
             calculation_log_id=None,
             site_control_group_id=3,
         ),
@@ -314,7 +318,7 @@ async def test_supersede_then_insert_does_many_sites(
             DynamicOperatingEnvelope,
             seed=404,
             dynamic_operating_envelope_id=None,
-            site_id=1,
+            site_group_id=1,
             calculation_log_id=None,
             site_control_group_id=1,
         ),
@@ -322,7 +326,7 @@ async def test_supersede_then_insert_does_many_sites(
             DynamicOperatingEnvelope,
             seed=505,
             dynamic_operating_envelope_id=None,
-            site_id=3,
+            site_group_id=3,
             calculation_log_id=None,
             site_control_group_id=2,
         ),
@@ -332,10 +336,8 @@ async def test_supersede_then_insert_does_many_sites(
         returned_ids = await supersede_then_insert_does(session, does, changed_time)
         await session.commit()
 
-        assert_list_type(int, returned_ids, count=len(does))
-
         # Assert that each doe is grouped under the site and then processed in batches of that size
-        mock_supersede_matching_does_for_site.assert_has_calls(
+        mock_supersede_matching_does_for_group.assert_has_calls(
             [
                 mock.call(session, [does[0], does[1], does[3]], 1, expected_site_control_group_ids, changed_time),
                 mock.call(session, [does[2]], 2, expected_site_control_group_ids, changed_time),
@@ -434,6 +436,108 @@ async def test_select_all_does(
 
 
 @pytest.fixture
+async def site_control_group_1_scoped_to_group_1(pg_base_config):
+    """Scopes site_control_group_id 1 (which owns DOEs 1-4 in base_config) to Group-1 (site_group_id 1)"""
+    async with generate_async_session(pg_base_config) as session:
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 1).values(required_site_group_id=1)
+        )
+        await session.commit()
+    yield pg_base_config
+
+
+@pytest.mark.parametrize(
+    "site_group_ids, expected_doe_ids",
+    [
+        (None, [1, 2, 3, 4]),
+        ({1, 2, 3, 4, 99}, [1, 2, 3, 4]),
+        ({2}, [1, 2, 4]),
+        ({1}, []),
+        ({99}, []),
+        (set(), []),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_all_does_site_group_id_filter(
+    site_control_group_1_scoped_to_group_1, site_group_ids: set[int] | None, expected_doe_ids: list[int]
+):
+    async with generate_async_session(site_control_group_1_scoped_to_group_1) as session:
+        does = await select_all_does(session, 1, 0, 500, None, site_group_ids=site_group_ids)
+        assert expected_doe_ids == [d.dynamic_operating_envelope_id for d in does]
+        assert (await count_all_does(session, 1, None, site_group_ids=site_group_ids)) == len(expected_doe_ids)
+
+
+@pytest.mark.parametrize(
+    "start_time_since, start_time_until, expected_doe_ids",
+    [
+        (None, None, [1, 2, 3, 4]),
+        (datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")), None, [1, 2, 3, 4]),
+        (datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")), None, [2, 4]),
+        (datetime(2022, 5, 8, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")), None, [4]),
+        (datetime(2022, 5, 8, 1, 2, 1, tzinfo=ZoneInfo("Australia/Brisbane")), None, []),
+        (None, datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")), [1, 3]),
+        (None, datetime(2022, 5, 8, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")), [1, 2, 3]),
+        (
+            datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
+            datetime(2022, 5, 8, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
+            [1, 2, 3],
+        ),
+        (
+            datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")),
+            datetime(2022, 5, 8, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
+            [2],
+        ),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_all_does_start_time_filters(
+    pg_base_config,
+    start_time_since: datetime | None,
+    start_time_until: datetime | None,
+    expected_doe_ids: list[int],
+):
+    async with generate_async_session(pg_base_config) as session:
+        does = await select_all_does(
+            session, 1, 0, 500, None, start_time_since=start_time_since, start_time_until=start_time_until
+        )
+        assert expected_doe_ids == [d.dynamic_operating_envelope_id for d in does]
+        assert (
+            await count_all_does(session, 1, None, start_time_since=start_time_since, start_time_until=start_time_until)
+        ) == len(expected_doe_ids)
+
+
+@pytest.mark.anyio
+async def test_select_all_does_combined_filters_are_additive(site_control_group_1_scoped_to_group_1):
+    """Sanity check that group/start_time/site_id filters combine via AND, not OR"""
+    async with generate_async_session(site_control_group_1_scoped_to_group_1) as session:
+        # DOE 1 matches group Group-1, start_time window and site_id 1 - should be the only match
+        does = await select_all_does(
+            session,
+            1,
+            0,
+            500,
+            None,
+            site_group_ids={2},
+            start_time_since=datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
+            start_time_until=datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")),
+        )
+        assert [1] == [d.dynamic_operating_envelope_id for d in does]
+
+        # Same filters but with a group that doesn't match - should exclude everything
+        does_no_match = await select_all_does(
+            session,
+            1,
+            0,
+            500,
+            None,
+            site_group_ids={1},
+            start_time_since=datetime(2022, 5, 7, 1, 2, tzinfo=ZoneInfo("Australia/Brisbane")),
+            start_time_until=datetime(2022, 5, 7, 3, 4, tzinfo=ZoneInfo("Australia/Brisbane")),
+        )
+        assert [] == [d.dynamic_operating_envelope_id for d in does_no_match]
+
+
+@pytest.fixture
 async def extra_site_control_groups(pg_base_config):
 
     # Current database entry has changed time '2021-04-05 10:01:00.500'
@@ -444,6 +548,7 @@ async def extra_site_control_groups(pg_base_config):
                 seed=303,
                 primacy=1,
                 site_control_group_id=4,
+                required_site_group_id=None,
                 changed_time=datetime(2021, 4, 5, 10, 4, 0, 500000, tzinfo=UTC),
             )
         )
@@ -495,14 +600,53 @@ async def test_select_all_site_control_groups(
         assert expected_site_control_ids == [g.site_control_group_id for g in groups]
 
 
+@pytest.fixture
+async def extra_site_control_groups_scoped(extra_site_control_groups):
+    """Builds on extra_site_control_groups (ids 1,2,3,4 - all required_site_group_id NULL) by scoping group 1 to
+    Group-1 (site_group_id 1) and group 2 to Group-2 (site_group_id 2)"""
+    async with generate_async_session(extra_site_control_groups) as session:
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 1).values(required_site_group_id=1)
+        )
+        await session.execute(
+            update(SiteControlGroup).where(SiteControlGroup.site_control_group_id == 2).values(required_site_group_id=2)
+        )
+        await session.commit()
+    yield extra_site_control_groups
+
+
 @pytest.mark.parametrize(
-    "site_control_group_id, site_id, period_start, period_end, expected_doe_ids",
+    "site_group_ids, expected_site_control_ids",
+    [
+        (None, [1, 2, 3, 4]),
+        (set(), [3, 4]),
+        ({1, 2, 3, 99}, [1, 2, 3, 4]),
+        ({1}, [1, 3, 4]),  # group 1 (scoped) + groups 3,4 (global)
+        ({2}, [2, 3, 4]),  # group 2 (scoped) + groups 3,4 (global)
+        ({3}, [3, 4]),  # groups 3,4 (global) only
+        ({99}, [3, 4]),  # groups 3,4 (global) only
+    ],
+)
+@pytest.mark.anyio
+async def test_select_and_count_all_site_control_groups_group_filter(
+    extra_site_control_groups_scoped, site_group_ids: set[int] | None, expected_site_control_ids: list[int]
+):
+    async with generate_async_session(extra_site_control_groups_scoped) as session:
+        groups = await select_all_site_control_groups(session, 0, 500, None, site_group_ids=site_group_ids)
+        assert expected_site_control_ids == [g.site_control_group_id for g in groups]
+        assert (await count_all_site_control_groups(session, None, site_group_ids=site_group_ids)) == len(
+            expected_site_control_ids
+        )
+
+
+@pytest.mark.parametrize(
+    "site_control_group_id, site_group_id, period_start, period_end, expected_doe_ids",
     [
         (99, None, datetime.min, datetime.max, []),
         (1, None, datetime.min, datetime.max, [1, 2, 3, 4]),
-        (1, 1, datetime.min, datetime.max, [1, 2, 4]),
-        (1, 2, datetime.min, datetime.max, [3]),
-        (1, 3, datetime.min, datetime.max, []),
+        (1, 2, datetime.min, datetime.max, [1, 2, 4]),
+        (1, 4, datetime.min, datetime.max, [3]),
+        (1, 5, datetime.min, datetime.max, []),
         (
             1,
             None,
@@ -519,14 +663,14 @@ async def test_select_all_site_control_groups(
         ),
         (
             1,
-            1,
+            2,
             datetime(2022, 5, 7, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
             datetime(2022, 5, 8, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
             [1, 2],
         ),
         (
             1,
-            2,
+            4,
             datetime(2022, 5, 7, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
             datetime(2022, 5, 8, 1, 2, 0, tzinfo=ZoneInfo("Australia/Brisbane")),
             [3],
@@ -537,7 +681,7 @@ async def test_select_all_site_control_groups(
 async def test_delete_does_with_start_time_in_range(
     pg_base_config,
     site_control_group_id: int,
-    site_id: int | None,
+    site_group_id: int | None,
     period_start: datetime,
     period_end: datetime,
     expected_doe_ids: list[int],
@@ -552,7 +696,7 @@ async def test_delete_does_with_start_time_in_range(
         ).scalar_one()
 
         await delete_does_with_start_time_in_range(
-            session, site_control_group_id, site_id, period_start, period_end, deleted_time
+            session, site_control_group_id, site_group_id, period_start, period_end, deleted_time
         )
         await session.commit()
 

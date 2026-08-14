@@ -11,11 +11,26 @@ from envoy_schema.admin.schema.site import (
     SiteResponse,
 )
 from envoy_schema.admin.schema.site import SiteGroup as AdminSiteGroup
-from envoy_schema.admin.schema.site_group import SiteGroupPageResponse, SiteGroupResponse
+from envoy_schema.admin.schema.site_group import (
+    SiteGroupAssignmentPageResponse,
+    SiteGroupAssignmentRequest,
+    SiteGroupAssignmentResponse,
+    SiteGroupPageResponse,
+    SiteGroupRequest,
+    SiteGroupResponse,
+)
 from envoy_schema.server.schema.sep2.der import DERType, DOESupportedMode, VPPControlType
 
 from envoy.server.mapper.common import pow10_to_decimal_value
-from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus, SiteGroup
+from envoy.server.model.site import (
+    Site,
+    SiteDERAvailability,
+    SiteDERRating,
+    SiteDERSetting,
+    SiteDERStatus,
+    SiteGroup,
+    SiteGroupAssignment,
+)
 
 
 def _extract_failover_pow10_value(
@@ -211,7 +226,14 @@ class SiteMapper:
 
     @staticmethod
     def map_to_response(
-        total_count: int, limit: int, start: int, group: str | None, after: datetime | None, sites: Iterable[Site]
+        total_count: int,
+        limit: int,
+        start: int,
+        group: str | None,
+        after: datetime | None,
+        nmi: str | None,
+        aggregator_id: int | None,
+        sites: Iterable[Site],
     ) -> SitePageResponse:
         """Maps a set of sites to a single SitePageResponse. It's expected that sites will have their groups included"""
         return SitePageResponse(
@@ -220,11 +242,22 @@ class SiteMapper:
             start=start,
             after=after,
             group=group,
+            nmi=nmi,
+            aggregator_id=aggregator_id,
             sites=[SiteMapper.map_to_site_response(s) for s in sites],
         )
 
 
 class SiteGroupMapper:
+    @staticmethod
+    def map_from_request(site_group_request: SiteGroupRequest, changed_time: datetime) -> SiteGroup:
+        """Maps a SiteGroupRequest to a new (unpersisted) SiteGroup"""
+        return SiteGroup(
+            name=site_group_request.name,
+            default_group=site_group_request.default_group,
+            changed_time=changed_time,
+        )
+
     @staticmethod
     def map_to_site_group_response(group: SiteGroup, site_count: int) -> SiteGroupResponse:
         """Maps our internal SiteGroup model to an equivalent SiteResponse"""
@@ -233,6 +266,7 @@ class SiteGroupMapper:
             name=group.name,
             created_time=group.created_time,
             changed_time=group.changed_time,
+            default_group=group.default_group,
             total_sites=site_count,
         )
 
@@ -246,4 +280,39 @@ class SiteGroupMapper:
             limit=limit,
             start=start,
             groups=[SiteGroupMapper.map_to_site_group_response(g, count) for (g, count) in site_groups_with_count],
+        )
+
+
+class SiteGroupAssignmentMapper:
+    @staticmethod
+    def map_from_request(
+        assignment_request: SiteGroupAssignmentRequest, site_group_id: int, changed_time: datetime
+    ) -> SiteGroupAssignment:
+        """Maps a SiteGroupAssignmentRequest to a new (unpersisted) SiteGroupAssignment"""
+        return SiteGroupAssignment(
+            site_id=assignment_request.site_id,
+            site_group_id=site_group_id,
+            changed_time=changed_time,
+        )
+
+    @staticmethod
+    def map_to_assignment_response(assignment: SiteGroupAssignment) -> SiteGroupAssignmentResponse:
+        """Maps our internal SiteGroupAssignment model to an equivalent SiteGroupAssignmentResponse"""
+        return SiteGroupAssignmentResponse(
+            site_group_assignment_id=assignment.site_group_assignment_id,
+            site_id=assignment.site_id,
+            created_time=assignment.created_time,
+            changed_time=assignment.changed_time,
+        )
+
+    @staticmethod
+    def map_to_response(
+        total_count: int, limit: int, start: int, assignments: Iterable[SiteGroupAssignment]
+    ) -> SiteGroupAssignmentPageResponse:
+        """Maps a set of SiteGroupAssignments to a single SiteGroupAssignmentPageResponse"""
+        return SiteGroupAssignmentPageResponse(
+            total_count=total_count,
+            limit=limit,
+            start=start,
+            assignments=[SiteGroupAssignmentMapper.map_to_assignment_response(a) for a in assignments],
         )

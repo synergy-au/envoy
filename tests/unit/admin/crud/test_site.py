@@ -10,11 +10,15 @@ from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.admin.crud.site import (
+    count_all_site_group_assignments,
     count_all_site_groups,
     count_all_sites,
+    select_all_site_group_assignments,
     select_all_site_groups,
     select_all_sites,
+    select_single_site_group_assignment,
     select_single_site_no_scoping,
+    select_site_group_by_name,
     set_site_group_assignments,
 )
 from envoy.server.api.request import MAX_LIMIT
@@ -25,6 +29,7 @@ from envoy.server.model.site import (
     SiteDERSetting,
     SiteDERStatus,
     SiteGroup,
+    SiteGroupAssignment,
 )
 
 
@@ -64,6 +69,70 @@ async def test_count_all_sites_empty(pg_empty_config):
 
 
 @pytest.mark.parametrize(
+    "nmi_filter, aggregator_id_filter, expected_site_ids",
+    [
+        (None, None, [1, 2, 3, 4, 5, 6]),
+        ("", None, [1, 2, 3, 4, 5, 6]),
+        ("1111111111", None, [1]),
+        ("9999999999", None, []),
+        (None, 1, [1, 2, 4]),
+        (None, 0, [5, 6]),
+        (None, 99, []),
+        ("2222222222", 1, [2]),  # Additive (AND) - both match
+        ("2222222222", 2, []),  # Additive (AND) - nmi matches but aggregator doesn't
+    ],
+)
+@pytest.mark.anyio
+async def test_count_and_select_all_sites_nmi_aggregator_filters(
+    pg_base_config, nmi_filter: str | None, aggregator_id_filter: int | None, expected_site_ids: list[int]
+):
+    async with generate_async_session(pg_base_config) as session:
+        assert (
+            await count_all_sites(session, None, None, nmi_filter=nmi_filter, aggregator_id_filter=aggregator_id_filter)
+        ) == len(expected_site_ids)
+
+        sites = await select_all_sites(
+            session,
+            None,
+            0,
+            500,
+            None,
+            nmi_filter=nmi_filter,
+            aggregator_id_filter=aggregator_id_filter,
+        )
+        assert expected_site_ids == [s.site_id for s in sites]
+
+
+@pytest.mark.anyio
+async def test_select_all_sites_nmi_aggregator_additive_with_group(pg_base_config):
+    """Sanity check that group/nmi/aggregator_id filters all combine via AND, not OR"""
+    async with generate_async_session(pg_base_config) as session:
+        # Site 1 is in Group-1, has nmi 1111111111 and aggregator_id 1 - should be the only match
+        sites = await select_all_sites(
+            session,
+            "Group-1",
+            0,
+            500,
+            None,
+            nmi_filter="1111111111",
+            aggregator_id_filter=1,
+        )
+        assert [1] == [s.site_id for s in sites]
+
+        # Same filters but with an aggregator_id that doesn't match site 1 - should exclude everything
+        sites_no_match = await select_all_sites(
+            session,
+            "Group-1",
+            0,
+            500,
+            None,
+            nmi_filter="1111111111",
+            aggregator_id_filter=2,
+        )
+        assert [] == [s.site_id for s in sites_no_match]
+
+
+@pytest.mark.parametrize(
     "start, limit, group, changed_after, expected_site_ids, expected_group_ids, expected_der_ids",
     [
         (
@@ -72,7 +141,7 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             None,
             [1, 2, 3, 4, 5, 6],
-            [[1, 2], [1], [1], [], [], []],
+            [[1, 2], [1, 4], [1, 5], [], [], []],
             [(1, 1, 1, 1), None, None, None, None, None],
         ),
         (
@@ -81,7 +150,7 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC),
             [3, 4, 5, 6],
-            [[1], [], [], []],
+            [[1, 5], [], [], []],
             [None, None, None, None],
         ),
         (
@@ -90,11 +159,11 @@ async def test_count_all_sites_empty(pg_empty_config):
             "",
             None,
             [1, 2, 3, 4, 5, 6],
-            [[1, 2], [1], [1], [], [], []],
+            [[1, 2], [1, 4], [1, 5], [], [], []],
             [(1, 1, 1, 1), None, None, None, None, None],
         ),
-        (0, 500, "Group-1", None, [1, 2, 3], [[1, 2], [1], [1]], [(1, 1, 1, 1), None, None]),
-        (0, 500, "Group-1", datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC), [3], [[1]], [None]),
+        (0, 500, "Group-1", None, [1, 2, 3], [[1, 2], [1, 4], [1, 5]], [(1, 1, 1, 1), None, None]),
+        (0, 500, "Group-1", datetime(2022, 2, 3, 8, 5, 6, tzinfo=UTC), [3], [[1, 5]], [None]),
         (0, 500, "Group-2", None, [1], [[1, 2]], [(1, 1, 1, 1)]),
         (0, 500, "Group-3", None, [], [], []),
         (0, 500, "Group-DNE", None, [], [], []),
@@ -104,16 +173,16 @@ async def test_count_all_sites_empty(pg_empty_config):
             None,
             None,
             [2, 3, 4, 5, 6],
-            [[1], [1], [], [], []],
+            [[1, 4], [1, 5], [], [], []],
             [None, None, None, None, None],
         ),
-        (2, 500, None, None, [3, 4, 5, 6], [[1], [], [], []], [None, None, None, None]),
+        (2, 500, None, None, [3, 4, 5, 6], [[1, 5], [], [], []], [None, None, None, None]),
         (3, 500, None, None, [4, 5, 6], [[], [], []], [None, None, None]),
         (6, 500, None, None, [], [], []),
-        (1, 2, None, None, [2, 3], [[1], [1]], [None, None]),
-        (2, 2, None, None, [3, 4], [[1], []], [None, None]),
+        (1, 2, None, None, [2, 3], [[1, 4], [1, 5]], [None, None]),
+        (2, 2, None, None, [3, 4], [[1, 5], []], [None, None]),
         (0, 0, None, None, [], [], []),
-        (1, 1, "Group-1", None, [2], [[1]], [None]),
+        (1, 1, "Group-1", None, [2], [[1, 4]], [None]),
     ],
 )
 @pytest.mark.anyio
@@ -251,7 +320,7 @@ async def test_max_limit_select_all_sites(pg_base_config):
 @pytest.mark.anyio
 async def test_count_all_site_groups(pg_base_config):
     async with generate_async_session(pg_base_config) as session:
-        assert (await count_all_site_groups(session)) == 3
+        assert (await count_all_site_groups(session)) == 5
 
 
 @pytest.mark.anyio
@@ -263,10 +332,10 @@ async def test_count_all_site_groups_empty(pg_empty_config):
 @pytest.mark.parametrize(
     "start, limit, group, expected_id_count",
     [
-        (0, 500, None, [(1, 3), (2, 1), (3, 0)]),
+        (0, 500, None, [(1, 3), (2, 1), (3, 0), (4, 1), (5, 1)]),
         (0, 2, None, [(1, 3), (2, 1)]),
         (1, 2, None, [(2, 1), (3, 0)]),
-        (2, 2, None, [(3, 0)]),
+        (2, 2, None, [(3, 0), (4, 1)]),
         (0, 500, "Group-1", [(1, 3)]),
         (0, 500, "Group-2", [(2, 1)]),
         (0, 500, "Group-3", [(3, 0)]),
@@ -288,6 +357,77 @@ async def test_select_all_site_groups(
         assert expected_id_count == [(sg.site_group_id, count) for sg, count in groups]
 
 
+@pytest.mark.parametrize(
+    "group_name, expected_site_group_id",
+    [("Group-1", 1), ("Group-2", 2), ("Group-3", 3), ("Group-DNE", None), ("", None)],
+)
+@pytest.mark.anyio
+async def test_select_site_group_by_name(pg_base_config, group_name: str, expected_site_group_id: int | None):
+    async with generate_async_session(pg_base_config) as session:
+        group = await select_site_group_by_name(session, group_name)
+        if expected_site_group_id is None:
+            assert group is None
+        else:
+            assert isinstance(group, SiteGroup)
+            assert group.site_group_id == expected_site_group_id
+            assert group.name == group_name
+
+
+@pytest.mark.parametrize(
+    "site_group_id, expected_count",
+    [(1, 3), (2, 1), (3, 0), (99, 0)],
+)
+@pytest.mark.anyio
+async def test_count_all_site_group_assignments(pg_base_config, site_group_id: int, expected_count: int):
+    async with generate_async_session(pg_base_config) as session:
+        assert (await count_all_site_group_assignments(session, site_group_id)) == expected_count
+
+
+@pytest.mark.parametrize(
+    "site_group_id, start, limit, expected_assignment_ids, expected_site_ids",
+    [
+        (1, 0, 500, [1, 2, 3], [1, 2, 3]),
+        (1, 1, 500, [2, 3], [2, 3]),
+        (1, 0, 2, [1, 2], [1, 2]),
+        (1, 1, 1, [2], [2]),
+        (2, 0, 500, [4], [1]),
+        (3, 0, 500, [], []),
+        (99, 0, 500, [], []),
+    ],
+)
+@pytest.mark.anyio
+async def test_select_all_site_group_assignments(
+    pg_base_config,
+    site_group_id: int,
+    start: int,
+    limit: int,
+    expected_assignment_ids: list[int],
+    expected_site_ids: list[int],
+):
+    async with generate_async_session(pg_base_config) as session:
+        assignments = await select_all_site_group_assignments(session, site_group_id, start, limit)
+        assert_list_type(SiteGroupAssignment, assignments, count=len(expected_assignment_ids))
+        assert [a.site_group_assignment_id for a in assignments] == expected_assignment_ids
+        assert [a.site_id for a in assignments] == expected_site_ids
+
+
+@pytest.mark.parametrize(
+    "site_group_id, site_group_assignment_id, expected_site_id",
+    [(1, 1, 1), (1, 2, 2), (2, 4, 1), (1, 4, None), (1, 9999, None), (99, 1, None)],
+)
+@pytest.mark.anyio
+async def test_select_single_site_group_assignment(
+    pg_base_config, site_group_id: int, site_group_assignment_id: int, expected_site_id: int | None
+):
+    async with generate_async_session(pg_base_config) as session:
+        assignment = await select_single_site_group_assignment(session, site_group_id, site_group_assignment_id)
+        if expected_site_id is None:
+            assert assignment is None
+        else:
+            assert isinstance(assignment, SiteGroupAssignment)
+            assert assignment.site_id == expected_site_id
+
+
 @pytest.mark.parametrize("missing_site_id", [0, -1, 9999])
 @pytest.mark.anyio
 async def test_select_single_site_no_scoping_missing_site_ids(pg_base_config, missing_site_id: int):
@@ -300,8 +440,8 @@ async def test_select_single_site_no_scoping_missing_site_ids(pg_base_config, mi
     "site_id, expected_group_ids, expected_der_ids, expected_site_import_watts",
     [
         (1, [1, 2], (1, 1, 1, 1), Decimal("10.10")),
-        (2, [1], None, None),
-        (3, [1], None, Decimal("20.20")),
+        (2, [1, 4], None, None),
+        (3, [1, 5], None, Decimal("20.20")),
         (4, [], None, None),
         (5, [], None, None),
         (6, [], None, None),
@@ -425,5 +565,5 @@ async def test_set_site_group_assignments_does_not_affect_other_sites(pg_base_co
 
     async with generate_async_session(pg_base_config) as session:
         assert await _get_group_ids_for_site(session, 1) == [3]
-        assert await _get_group_ids_for_site(session, 2) == [1]  # unchanged
-        assert await _get_group_ids_for_site(session, 3) == [1]  # unchanged
+        assert await _get_group_ids_for_site(session, 2) == [1, 4]  # unchanged
+        assert await _get_group_ids_for_site(session, 3) == [1, 5]  # unchanged

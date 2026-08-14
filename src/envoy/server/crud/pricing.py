@@ -1,12 +1,11 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from envoy.server.crud.common import localize_start_time, localize_start_time_for_entity
+from envoy.server.crud.site_group import fetch_site_group_membership
 from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
-from envoy.server.model.site import Site
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 
 
@@ -21,11 +20,15 @@ async def select_tariff_fsa_ids(session: AsyncSession, changed_after: datetime) 
     return resp.scalars().all()
 
 
-async def select_tariff_count(session: AsyncSession, after: datetime, fsa_id: int | None) -> int:
+async def select_tariff_count(
+    session: AsyncSession, after: datetime, fsa_id: int | None, site_group_ids: set[int] | None = None
+) -> int:
     """Fetches the number of tariffs stored
 
     after: Only tariffs with a changed_time greater than this value will be counted (set to 0 to count everything)
-    fsa_id: If specified - only count Tariffs with this value for fsa_id"""
+    fsa_id: If specified - only count Tariffs with this value for fsa_id
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
@@ -37,12 +40,22 @@ async def select_tariff_count(session: AsyncSession, after: datetime, fsa_id: in
     if fsa_id is not None:
         stmt = stmt.where(Tariff.fsa_id == fsa_id)
 
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
+
     resp = await session.execute(stmt)
     return resp.scalar_one()
 
 
 async def select_all_tariffs(
-    session: AsyncSession, start: int, changed_after: datetime, limit: int, fsa_id: int | None
+    session: AsyncSession,
+    start: int,
+    changed_after: datetime,
+    limit: int,
+    fsa_id: int | None,
+    site_group_ids: set[int] | None = None,
 ) -> Sequence[Tariff]:
     """Selects tariffs with some basic pagination / filtering based on change time
 
@@ -51,7 +64,9 @@ async def select_all_tariffs(
     start: The number of matching entities to skip
     limit: The maximum number of entities to return
     changed_after: removes any entities with a changed_date BEFORE this value (set to datetime.min to not filter)
-    fsa_id: If specified - only include Tariffs with this value for fsa_id"""
+    fsa_id: If specified - only include Tariffs with this value for fsa_id
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
@@ -70,16 +85,31 @@ async def select_all_tariffs(
     if fsa_id is not None:
         stmt = stmt.where(Tariff.fsa_id == fsa_id)
 
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
+
     resp = await session.execute(stmt)
     return resp.scalars().all()
 
 
-async def select_single_tariff(session: AsyncSession, tariff_id: int) -> Tariff | None:
-    """Requests a single tariff based on the primary key - returns None if it does not exist"""
+async def select_single_tariff(
+    session: AsyncSession, tariff_id: int, site_group_ids: set[int] | None = None
+) -> Tariff | None:
+    """Requests a single tariff based on the primary key - returns None if it does not exist
+
+    site_group_ids: hides any Tariff whose required_site_group_id is set and doesn't include a value here as a member
+    """
 
     # At the moment tariff's are exposed to all aggregators - the plan is for them to be scoped for individual
     # groups of sites but this could be subject to change as the DNSP's requirements become more clear
     stmt = select(Tariff).where(Tariff.tariff_id == tariff_id)
+
+    if site_group_ids is not None:
+        stmt = stmt.where(
+            or_(Tariff.required_site_group_id.is_(None), Tariff.required_site_group_id.in_(site_group_ids))
+        )
 
     resp = await session.execute(stmt)
     return resp.scalar_one_or_none()
@@ -88,48 +118,44 @@ async def select_single_tariff(session: AsyncSession, tariff_id: int) -> Tariff 
 async def select_tariff_generated_rate_include_deleted(
     session: AsyncSession,
     aggregator_id: int,
-    site_id: int | None,
+    site_id: int,
     rate_id: int,
 ) -> TariffGeneratedRate | ArchiveTariffGeneratedRate | None:
     """Attempts to fetch a TariffGeneratedRate/ArchiveTariffGeneratedRate using its primary id, also scoping it to a
-    particular aggregator/site
+    particular aggregator/site via SiteGroup membership
 
     aggregator_id: The aggregator id to constrain the lookup to
-    site_id: If None - no effect otherwise the query will apply a filter on site_id using this value"""
+    site_id: filter on site_id using this value against SiteGroup membership"""
 
-    stmt_active = (
-        select(TariffGeneratedRate, Site.timezone_id)
-        .join(TariffGeneratedRate.site)
-        .where((TariffGeneratedRate.tariff_generated_rate_id == rate_id) & (Site.aggregator_id == aggregator_id))
+    # Start by confirming the referenced site_id exists within the specified aggregator.
+    site_group_ids = await fetch_site_group_membership(session, aggregator_id=aggregator_id, site_id=site_id)
+    if not site_group_ids:
+        return None
+
+    stmt_active = select(TariffGeneratedRate).where(
+        (TariffGeneratedRate.tariff_generated_rate_id == rate_id)
+        & (TariffGeneratedRate.site_group_id.in_(site_group_ids))
     )
-    if site_id is not None:
-        stmt_active = stmt_active.where(TariffGeneratedRate.site_id == site_id)
 
     resp_active = await session.execute(stmt_active)
-    raw_active = resp_active.one_or_none()
+    raw_active = resp_active.scalar_one_or_none()
     if raw_active is not None:
-        return localize_start_time(raw_active)
+        return raw_active
 
     # If we are here - there's nothing in the active table - consider the archive
     stmt_archive = (
-        select(ArchiveTariffGeneratedRate, Site.timezone_id)
-        .join(Site, ArchiveTariffGeneratedRate.site_id == Site.site_id)
+        select(ArchiveTariffGeneratedRate)
         .where(
             (ArchiveTariffGeneratedRate.tariff_generated_rate_id == rate_id)
             & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))  # Only deleted records
-            & (Site.aggregator_id == aggregator_id)
+            & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
         )
         .order_by(ArchiveTariffGeneratedRate.deleted_time.desc())
         .limit(1)  # Only the most recent deletion (realistically there will only ever be one anyway)
     )
-    if site_id is not None:
-        stmt_archive = stmt_archive.where(ArchiveTariffGeneratedRate.site_id == site_id)
 
     resp_archive = await session.execute(stmt_archive)
-    raw_archive = resp_archive.one_or_none()
-    if raw_archive is not None:
-        return localize_start_time(raw_archive)
-    return None
+    return resp_archive.scalar_one_or_none()
 
 
 async def select_tariff_component_by_id(
@@ -188,7 +214,7 @@ async def count_active_rates_include_deleted(
     session: AsyncSession,
     tariff_id: int,
     tariff_component_id: int | None,
-    site_id: int,
+    site_group_ids: set[int],
     now: datetime,
     changed_after: datetime | None,
 ) -> int:
@@ -196,14 +222,14 @@ async def count_active_rates_include_deleted(
 
     tariff_id: The parent TariffID to filter results to (only used if tariff_component_id is None)
     tariff_component_id: If specified - ONLY filter for results underneath this ID (tariff_id is NOT considered)
-    site_id: The site that the counted rates will be all be scoped from
+    site_group_ids: The site groups that the counted rates will be all be scoped from
     now: The timestamp that excludes any rate whose end_time precedes this (they are expired and no longer relevant)
     changed_after: Only rates modified after this time will be counted."""
 
     count_active_rates_stmt = (
         select(func.count())
         .select_from(TariffGeneratedRate)
-        .where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_id == site_id))
+        .where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_group_id.in_(site_group_ids)))
     )
     if tariff_component_id is None:
         count_active_rates_stmt = count_active_rates_stmt.where(TariffGeneratedRate.tariff_id == tariff_id)
@@ -217,8 +243,8 @@ async def count_active_rates_include_deleted(
         .select_from(ArchiveTariffGeneratedRate)
         .where(
             (ArchiveTariffGeneratedRate.end_time > now)
-            & (ArchiveTariffGeneratedRate.site_id == site_id)
             & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))
+            & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
         )
     )
     if tariff_component_id is None:
@@ -245,7 +271,7 @@ async def select_active_rates_include_deleted(
     session: AsyncSession,
     tariff_id: int,
     tariff_component_id: int | None,
-    site: Site,
+    site_group_ids: set[int],
     now: datetime,
     start: int,
     changed_after: datetime | None,
@@ -256,7 +282,7 @@ async def select_active_rates_include_deleted(
 
     tariff_id: The parent TariffID to filter results to (only used if tariff_component_id is None)
     tariff_component_id: If specified - ONLY filter for results underneath this ID (tariff_id is NOT considered)
-    site: Only TariffGeneratedRate from this site will be included
+    site_group_ids: Only TariffGeneratedRate from these SiteGroup.site_group_id will be included
     now: The timestamp that excludes any TariffGeneratedRate whose end_time precedes this (i.e. they are expired and no
          longer relevant)
     start: How many TariffGeneratedRate to skip
@@ -269,7 +295,7 @@ async def select_active_rates_include_deleted(
         TariffGeneratedRate.tariff_generated_rate_id,
         TariffGeneratedRate.tariff_id,
         TariffGeneratedRate.tariff_component_id,
-        TariffGeneratedRate.site_id,
+        TariffGeneratedRate.site_group_id,
         TariffGeneratedRate.calculation_log_id,
         TariffGeneratedRate.start_time,
         TariffGeneratedRate.duration_seconds,
@@ -283,7 +309,7 @@ async def select_active_rates_include_deleted(
         literal_column("NULL").label("archive_time"),
         literal_column("NULL").label("deleted_time"),
         literal_column("0").label("is_archive"),
-    ).where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_id == site.site_id))
+    ).where((TariffGeneratedRate.end_time > now) & (TariffGeneratedRate.site_group_id.in_(site_group_ids)))
     if tariff_component_id is None:
         select_active_rates = select_active_rates.where(TariffGeneratedRate.tariff_id == tariff_id)
     else:
@@ -293,7 +319,7 @@ async def select_active_rates_include_deleted(
         ArchiveTariffGeneratedRate.tariff_generated_rate_id,
         ArchiveTariffGeneratedRate.tariff_id,
         ArchiveTariffGeneratedRate.tariff_component_id,
-        ArchiveTariffGeneratedRate.site_id,
+        ArchiveTariffGeneratedRate.site_group_id,
         ArchiveTariffGeneratedRate.calculation_log_id,
         ArchiveTariffGeneratedRate.start_time,
         ArchiveTariffGeneratedRate.duration_seconds,
@@ -309,8 +335,8 @@ async def select_active_rates_include_deleted(
         literal_column("1").label("is_archive"),
     ).where(
         (ArchiveTariffGeneratedRate.end_time > now)
-        & (ArchiveTariffGeneratedRate.site_id == site.site_id)
         & (ArchiveTariffGeneratedRate.deleted_time.is_not(None))
+        & (ArchiveTariffGeneratedRate.site_group_id.in_(site_group_ids))
     )
     if tariff_component_id is None:
         select_archive_rates = select_archive_rates.where(ArchiveTariffGeneratedRate.tariff_id == tariff_id)
@@ -341,45 +367,39 @@ async def select_active_rates_include_deleted(
     # We use the literal "is_archive" from our query to differentiate archive from normal rows
     return [
         (
-            localize_start_time_for_entity(
-                ArchiveTariffGeneratedRate(
-                    tariff_generated_rate_id=t.tariff_generated_rate_id,
-                    tariff_id=t.tariff_id,
-                    tariff_component_id=t.tariff_component_id,
-                    site_id=t.site_id,
-                    calculation_log_id=t.calculation_log_id,
-                    start_time=t.start_time,
-                    duration_seconds=t.duration_seconds,
-                    end_time=t.end_time,
-                    price_pow10_encoded=t.price_pow10_encoded,
-                    block_1_start_pow10_encoded=t.block_1_start_pow10_encoded,
-                    price_pow10_encoded_block_1=t.price_pow10_encoded_block_1,
-                    created_time=t.created_time,
-                    changed_time=t.changed_time,
-                    archive_id=t.archive_id,
-                    archive_time=t.archive_time,
-                    deleted_time=t.deleted_time,
-                ),
-                site.timezone_id,
+            ArchiveTariffGeneratedRate(
+                tariff_generated_rate_id=t.tariff_generated_rate_id,
+                tariff_id=t.tariff_id,
+                tariff_component_id=t.tariff_component_id,
+                site_group_id=t.site_group_id,
+                calculation_log_id=t.calculation_log_id,
+                start_time=t.start_time,
+                duration_seconds=t.duration_seconds,
+                end_time=t.end_time,
+                price_pow10_encoded=t.price_pow10_encoded,
+                block_1_start_pow10_encoded=t.block_1_start_pow10_encoded,
+                price_pow10_encoded_block_1=t.price_pow10_encoded_block_1,
+                created_time=t.created_time,
+                changed_time=t.changed_time,
+                archive_id=t.archive_id,
+                archive_time=t.archive_time,
+                deleted_time=t.deleted_time,
             )
             if t.is_archive
-            else localize_start_time_for_entity(
-                TariffGeneratedRate(
-                    tariff_generated_rate_id=t.tariff_generated_rate_id,
-                    tariff_id=t.tariff_id,
-                    tariff_component_id=t.tariff_component_id,
-                    site_id=t.site_id,
-                    calculation_log_id=t.calculation_log_id,
-                    start_time=t.start_time,
-                    duration_seconds=t.duration_seconds,
-                    end_time=t.end_time,
-                    price_pow10_encoded=t.price_pow10_encoded,
-                    block_1_start_pow10_encoded=t.block_1_start_pow10_encoded,
-                    price_pow10_encoded_block_1=t.price_pow10_encoded_block_1,
-                    created_time=t.created_time,
-                    changed_time=t.changed_time,
-                ),
-                site.timezone_id,
+            else TariffGeneratedRate(
+                tariff_generated_rate_id=t.tariff_generated_rate_id,
+                tariff_id=t.tariff_id,
+                tariff_component_id=t.tariff_component_id,
+                site_group_id=t.site_group_id,
+                calculation_log_id=t.calculation_log_id,
+                start_time=t.start_time,
+                duration_seconds=t.duration_seconds,
+                end_time=t.end_time,
+                price_pow10_encoded=t.price_pow10_encoded,
+                block_1_start_pow10_encoded=t.block_1_start_pow10_encoded,
+                price_pow10_encoded_block_1=t.price_pow10_encoded_block_1,
+                created_time=t.created_time,
+                changed_time=t.changed_time,
             )
         )
         for t in resp.all()

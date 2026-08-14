@@ -22,6 +22,7 @@ class SiteControlGroupListMapper:
             changed_time=changed_time,
             fsa_id=request.fsa_id,
             display_id=request.display_id,
+            required_site_group_id=request.required_site_group_id,
         )
 
     @staticmethod
@@ -34,17 +35,24 @@ class SiteControlGroupListMapper:
             changed_time=site_control_group.changed_time,
             fsa_id=site_control_group.fsa_id,
             display_id=site_control_group.display_id,
+            required_site_group_id=site_control_group.required_site_group_id,
         )
 
     @staticmethod
     def map_to_paged_response(
-        total_count: int, limit: int, start: int, after: datetime | None, groups: Iterable[SiteControlGroup]
+        total_count: int,
+        limit: int,
+        start: int,
+        after: datetime | None,
+        group: str | None,
+        groups: Iterable[SiteControlGroup],
     ) -> SiteControlGroupPageResponse:
         return SiteControlGroupPageResponse(
             total_count=total_count,
             limit=limit,
             start=start,
             after=after,
+            group=group,
             site_control_groups=[SiteControlGroupListMapper.map_to_response(g) for g in groups],
         )
 
@@ -56,7 +64,7 @@ class SiteControlListMapper:
     ) -> list[DynamicOperatingEnvelope]:
         return [
             DynamicOperatingEnvelope(
-                site_id=c.site_id,
+                site_group_id=c.site_group_id,
                 site_control_group_id=site_control_group_id,
                 calculation_log_id=c.calculation_log_id,
                 changed_time=changed_time,
@@ -86,7 +94,7 @@ class SiteControlListMapper:
             site_control_id=control.dynamic_operating_envelope_id,
             created_time=control.created_time,
             changed_time=control.changed_time,
-            site_id=control.site_id,
+            site_group_id=control.site_group_id,
             calculation_log_id=control.calculation_log_id,
             duration_seconds=control.duration_seconds,
             import_limit_watts=control.import_limit_active_watts,
@@ -107,12 +115,24 @@ class SiteControlListMapper:
 
     @staticmethod
     def map_to_paged_response(
-        total_count: int, limit: int, start: int, after: datetime | None, does: Iterable[DynamicOperatingEnvelope]
+        total_count: int,
+        limit: int,
+        start: int,
+        after: datetime | None,
+        site_id: int | None,
+        group: str | None,
+        start_time_since: datetime | None,
+        start_time_until: datetime | None,
+        does: Iterable[DynamicOperatingEnvelope],
     ) -> SiteControlPageResponse:
         return SiteControlPageResponse(
             total_count=total_count,
             limit=limit,
             start=start,
             after=after,
+            site_id=site_id,
+            group=group,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
             controls=[SiteControlListMapper.map_to_response(d) for d in does],
         )

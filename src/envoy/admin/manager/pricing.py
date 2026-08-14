@@ -3,13 +3,14 @@
 from datetime import datetime
 from typing import cast
 
-from envoy_schema.admin.schema.base import BatchCreateResponse
+from envoy_schema.admin.schema.base import BatchCreateCollidableResponse, OnCollide
 from envoy_schema.admin.schema.pricing import (
     TariffComponentRequest,
     TariffComponentResponse,
     TariffGeneratedRatePageResponse,
     TariffGeneratedRateRequest,
     TariffGeneratedRateResponse,
+    TariffPageResponse,
     TariffRequest,
     TariffResponse,
 )
@@ -18,17 +19,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.admin.crud.pricing import (
     cancel_and_delete_tariff_component,
+    cancel_colliding_tariff_generated_rates,
     cancel_tariff_generated_rate,
-    count_tariff_generated_rates_for_period,
+    count_filtered_tariff_generated_rates,
     insert_many_tariff_genrate,
+    insert_many_tariff_genrate_ignore_collisions,
     insert_single_tariff,
+    select_filtered_tariff_generated_rates,
     select_single_tariff_generated_rate,
     select_tariff_components_for_tariff,
-    select_tariff_generated_rates_for_period,
     select_tariff_ids_for_component_ids,
     update_single_tariff,
     update_single_tariff_component,
 )
+from envoy.admin.crud.site_group import fetch_site_group_id_restrictions
 from envoy.admin.mapper.pricing import (
     TariffComponentMapper,
     TariffGeneratedRateListMapper,
@@ -39,6 +43,7 @@ from envoy.server.crud.pricing import (
     select_all_tariffs,
     select_single_tariff,
     select_tariff_component_by_id,
+    select_tariff_count,
 )
 from envoy.server.manager.time import utc_now
 from envoy.server.model.subscription import SubscriptionResource
@@ -83,10 +88,30 @@ class TariffManager:
         return TariffMapper.map_to_response(tariff)
 
     @staticmethod
-    async def fetch_many_tariffs(session: AsyncSession, start: int, limit: int) -> list[TariffResponse]:
-        """Select many tariff entries from the DB and map to a list of TariffResponse objects"""
-        tariff_list = await select_all_tariffs(session, start, datetime.min, limit, None)
-        return [TariffMapper.map_to_response(t) for t in tariff_list]
+    async def fetch_many_tariffs(
+        session: AsyncSession, start: int, limit: int, group_filter: str | None
+    ) -> TariffPageResponse:
+        """Select many tariff entries from the DB and map to a TariffPageResponse.
+
+        group_filter: If specified - only include tariffs that are globally visible or whose required_site_group
+            references a SiteGroup with this name"""
+
+        site_group_restrictions = await fetch_site_group_id_restrictions(session, site_id=None, group_name=group_filter)
+
+        tariff_count = await select_tariff_count(
+            session, datetime.min, fsa_id=None, site_group_ids=site_group_restrictions
+        )
+        tariff_list = await select_all_tariffs(
+            session,
+            start=start,
+            limit=limit,
+            changed_after=datetime.min,
+            fsa_id=None,
+            site_group_ids=site_group_restrictions,
+        )
+        return TariffMapper.map_to_page_response(
+            total_count=tariff_count, limit=limit, start=start, group=group_filter, tariffs=tariff_list
+        )
 
 
 class TariffComponentManager:
@@ -184,11 +209,19 @@ class TariffGeneratedRateManager:
 
     @staticmethod
     async def add_many_tariff_genrate(
-        session: AsyncSession, tariff_genrates: list[TariffGeneratedRateRequest]
-    ) -> BatchCreateResponse:
+        session: AsyncSession,
+        tariff_genrates: list[TariffGeneratedRateRequest],
+        on_collide: OnCollide = OnCollide.error,
+    ) -> BatchCreateCollidableResponse:
         """Map a TariffGeneratedRateRequest object to a TariffGeneratedRate model and insert into DB.
 
-        Return the IDs of the inserted rates."""
+        Entities that collide with an existing record on the (tariff_component_id, start_time, site_group_id)
+        unique constraint will be handled according to on_collide:
+            error: The entire operation will be aborted (nothing written) - a collision will raise an IntegrityError
+            ignore: Colliding entities will be skipped. The corresponding ID in the response will be -1
+            cancel: Any existing colliding entities will be cancelled (archived/deleted) before inserting
+
+        Return the IDs of the inserted rates (1-1 correlated with tariff_genrates - see OnCollide)."""
 
         changed_time = utc_now()
 
@@ -201,43 +234,61 @@ class TariffGeneratedRateManager:
         tariff_genrate_models = TariffGeneratedRateListMapper.map_from_request(
             changed_time, tariff_genrates, tariff_ids_by_component
         )
-        insert_ids = await insert_many_tariff_genrate(session, tariff_genrate_models)
+
+        insert_ids: list[int | None]
+        if on_collide == OnCollide.ignore:
+            insert_ids = await insert_many_tariff_genrate_ignore_collisions(session, tariff_genrate_models)
+        else:
+            if on_collide == OnCollide.cancel:
+                await cancel_colliding_tariff_generated_rates(session, tariff_genrate_models, changed_time)
+            insert_ids = cast(list[int | None], await insert_many_tariff_genrate(session, tariff_genrate_models))
 
         await NotificationManager.notify_changed_deleted_entities(
             session, SubscriptionResource.TARIFF_GENERATED_RATE, changed_time
         )
         await session.commit()
 
-        return BatchCreateResponse(ids=cast(list[int], insert_ids))
+        return BatchCreateCollidableResponse(on_collide=on_collide, ids=insert_ids)
 
     @staticmethod
-    async def fetch_rates_for_period(
+    async def fetch_tariff_genrates(
         session: AsyncSession,
         tariff_component_id: int,
         start: int,
         limit: int,
-        period_start: datetime,
-        period_end: datetime,
-        site_id: int | None = None,
+        group: str | None,
+        start_time_since: datetime | None,
+        start_time_until: datetime | None,
+        site_id: int | None,
     ) -> TariffGeneratedRatePageResponse:
-        """Fetch paginated tariff generated rates for a time period scoped to a TariffComponent.
-        Raises NoResultFound if the TariffComponent does not exist."""
-        tc = await select_tariff_component_by_id(session, tariff_component_id)
-        if tc is None:
-            raise NoResultFound
-        total_count = await count_tariff_generated_rates_for_period(
-            session, tariff_component_id, period_start, period_end, site_id
-        )
-        rates = await select_tariff_generated_rates_for_period(
-            session, tariff_component_id, start, limit, period_start, period_end, site_id
-        )
-        return TariffGeneratedRateListMapper.map_to_page_response(
-            total_count=total_count,
-            rates=rates,
+
+        site_group_ids = await fetch_site_group_id_restrictions(session, site_id=site_id, group_name=group)
+
+        rates = await select_filtered_tariff_generated_rates(
+            session,
             tariff_component_id=tariff_component_id,
+            site_group_ids=site_group_ids,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
             start=start,
             limit=limit,
-            period_start=period_start,
-            period_end=period_end,
+        )
+        count = await count_filtered_tariff_generated_rates(
+            session,
+            tariff_component_id=tariff_component_id,
+            site_group_ids=site_group_ids,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+        )
+
+        return TariffGeneratedRateListMapper.map_to_page_response(
+            total_count=count,
+            limit=limit,
+            start=start,
+            tariff_component_id=tariff_component_id,
+            start_time_since=start_time_since,
+            start_time_until=start_time_until,
+            group=group,
             site_id=site_id,
+            rates=rates,
         )

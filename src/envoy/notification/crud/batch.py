@@ -14,21 +14,24 @@ from envoy.notification.crud.archive import (
     orm_relationship_map_parent_entities,
 )
 from envoy.notification.crud.common import (
+    ArchiveSiteScopedDynamicOperatingEnvelope,
     ArchiveSiteScopedFunctionSetAssignment,
     ArchiveSiteScopedSiteControlGroup,
     ArchiveSiteScopedSiteControlGroupDefault,
     ArchiveSiteScopedTariff,
     ArchiveSiteScopedTariffComponent,
+    ArchiveSiteScopedTariffGeneratedRate,
+    SiteScopedDynamicOperatingEnvelope,
     SiteScopedFunctionSetAssignment,
     SiteScopedSiteControlGroup,
     SiteScopedSiteControlGroupDefault,
     SiteScopedTariff,
     SiteScopedTariffComponent,
+    SiteScopedTariffGeneratedRate,
     TArchiveResourceModel,
     TResourceModel,
 )
 from envoy.notification.exception import NotificationError
-from envoy.server.crud.common import localize_start_time_for_entity
 from envoy.server.crud.server import select_server_config
 from envoy.server.manager.der_constants import PUBLIC_SITE_DER_ID
 from envoy.server.model.aggregator import Aggregator
@@ -47,7 +50,14 @@ from envoy.server.model.archive.site import (
 from envoy.server.model.archive.site_reading import ArchiveSiteReading, ArchiveSiteReadingType
 from envoy.server.model.archive.tariff import ArchiveTariff, ArchiveTariffComponent, ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup, SiteControlGroupDefault
-from envoy.server.model.site import Site, SiteDERAvailability, SiteDERRating, SiteDERSetting, SiteDERStatus
+from envoy.server.model.site import (
+    Site,
+    SiteDERAvailability,
+    SiteDERRating,
+    SiteDERSetting,
+    SiteDERStatus,
+    SiteGroupAssignment,
+)
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.subscription import Subscription, SubscriptionResource
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
@@ -139,8 +149,8 @@ def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tup
         site: Site = cast(Site, entity)
         return (site.aggregator_id, site.site_id)
     elif resource == SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE:
-        doe = cast(DynamicOperatingEnvelope, entity)
-        return (doe.site.aggregator_id, doe.site_id, doe.site_control_group_id)
+        scoped_doe = cast(SiteScopedDynamicOperatingEnvelope, entity)
+        return (scoped_doe.aggregator_id, scoped_doe.site_id, scoped_doe.original.site_control_group_id)
     elif resource == SubscriptionResource.READING:
         reading = cast(SiteReading, entity)
         return (
@@ -149,8 +159,8 @@ def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tup
             reading.site_reading_type.group_id,
         )
     elif resource == SubscriptionResource.TARIFF_GENERATED_RATE:
-        rate = cast(TariffGeneratedRate, entity)
-        return (rate.site.aggregator_id, rate.tariff_id, rate.site_id, rate.tariff_component_id)
+        rate = cast(SiteScopedTariffGeneratedRate, entity)
+        return (rate.aggregator_id, rate.original.tariff_id, rate.site_id, rate.original.tariff_component_id)
     elif resource == SubscriptionResource.SITE_DER_AVAILABILITY:
         availability = cast(SiteDERAvailability, entity)
         return (availability.site.aggregator_id, availability.site_id, PUBLIC_SITE_DER_ID)
@@ -183,8 +193,8 @@ def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tup
         tariff = cast(SiteScopedTariff, entity)
         return (tariff.aggregator_id, tariff.site_id)
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
-        rate = cast(TariffGeneratedRate, entity)
-        return (rate.site.aggregator_id, rate.tariff_id, rate.site_id)
+        rate = cast(SiteScopedTariffGeneratedRate, entity)
+        return (rate.aggregator_id, rate.original.tariff_id, rate.site_id)
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate batch key")
 
@@ -198,13 +208,13 @@ def get_subscription_filter_id(resource: SubscriptionResource, entity: TResource
         return cast(Site, entity).site_id
     elif resource == SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE:
         # DOE subscriptions can be scoped to a single DERP
-        return cast(DynamicOperatingEnvelope, entity).site_control_group_id
+        return cast(SiteScopedDynamicOperatingEnvelope, entity).original.site_control_group_id
     elif resource == SubscriptionResource.READING:
         # Reading subscriptions can be scoped to the overarching type
         return cast(SiteReading, entity).site_reading_type.group_id
     elif resource == SubscriptionResource.TARIFF_GENERATED_RATE:
         # rate subscriptions can be scoped to a single tariff
-        return cast(TariffGeneratedRate, entity).tariff_component_id
+        return cast(SiteScopedTariffGeneratedRate, entity).original.tariff_component_id
     elif resource == SubscriptionResource.SITE_DER_AVAILABILITY:
         # der entities get scoped to the parent der
         return PUBLIC_SITE_DER_ID  # There is only a single site DER per EndDevice - it has a static id
@@ -229,7 +239,7 @@ def get_subscription_filter_id(resource: SubscriptionResource, entity: TResource
         return cast(SiteScopedTariff, entity).original.fsa_id
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
         # rate subscriptions can be scoped to a single tariff
-        return cast(TariffGeneratedRate, entity).tariff_id
+        return cast(SiteScopedTariffGeneratedRate, entity).original.tariff_id
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate primary key")
 
@@ -239,11 +249,11 @@ def get_site_id(resource: SubscriptionResource, entity: TResourceModel) -> int:
     if resource == SubscriptionResource.SITE:
         return cast(Site, entity).site_id
     elif resource == SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE:
-        return cast(DynamicOperatingEnvelope, entity).site_id
+        return cast(SiteScopedDynamicOperatingEnvelope, entity).site_id
     elif resource == SubscriptionResource.READING:
         return cast(SiteReading, entity).site_reading_type.site_id
     elif resource == SubscriptionResource.TARIFF_GENERATED_RATE:
-        return cast(TariffGeneratedRate, entity).site_id
+        return cast(SiteScopedTariffGeneratedRate, entity).site_id
     elif resource == SubscriptionResource.SITE_DER_AVAILABILITY:
         return cast(SiteDERAvailability, entity).site_id
     elif resource == SubscriptionResource.SITE_DER_RATING:
@@ -263,7 +273,7 @@ def get_site_id(resource: SubscriptionResource, entity: TResourceModel) -> int:
     elif resource == SubscriptionResource.TARIFF:
         return cast(SiteScopedTariff, entity).site_id
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
-        return cast(TariffGeneratedRate, entity).site_id
+        return cast(SiteScopedTariffGeneratedRate, entity).site_id
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate site id")
 
@@ -310,12 +320,15 @@ async def fetch_sites_by_changed_at(
 
 async def fetch_rates_by_changed_at(
     session: AsyncSession, timestamp: datetime
-) -> list[AggregatorBatchedEntities[TariffGeneratedRate, ArchiveTariffGeneratedRate]]:
+) -> list[AggregatorBatchedEntities[SiteScopedTariffGeneratedRate, ArchiveSiteScopedTariffGeneratedRate]]:  # type: ignore # SiteScoped variables will work here - tests enforce it
     """Fetches all rates matching the specified changed_at and returns them keyed by their aggregator/site id
 
-    Will include the TariffGeneratedRate.site relationship
+    A rate targets a SiteGroup (rather than a single site) - each changed/deleted rate is expanded into one
+    SiteScopedTariffGeneratedRate per member site of its SiteGroup (NOT every site in the system - only the
+    group's actual members, unlike the SiteControlGroup/FSA fan-out patterns elsewhere in this file). A rate whose
+    SiteGroup currently has no members contributes no entries.
 
-    Also fetches any site from the archive that was deleted at the specified timestamp
+    Also fetches any rate from the archive that was deleted at the specified timestamp
 
     Will return two batches - one grouped by TARIFF_GENERATED_RATE batch and another keyed by
     COMBINED_TARIFF_GENERATED_RATE"""
@@ -324,73 +337,188 @@ async def fetch_rates_by_changed_at(
         session, TariffGeneratedRate, ArchiveTariffGeneratedRate, timestamp
     )
 
-    referenced_site_ids = {
-        e.site_id
+    referenced_site_group_ids = {
+        e.site_group_id
         for e in cast(Iterable[TariffGeneratedRate | ArchiveTariffGeneratedRate], chain(active_rates, deleted_rates))
     }
 
-    active_sites, deleted_sites = await fetch_entities_with_archive_by_id(
-        session, Site, ArchiveSite, referenced_site_ids
-    )
+    member_sites_by_group_id: dict[int, list[tuple[int, int]]] = {}
+    if referenced_site_group_ids:
+        member_sites = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id)
+                .join(Site, Site.site_id == SiteGroupAssignment.site_id)
+                .where(SiteGroupAssignment.site_group_id.in_(referenced_site_group_ids))
+            )
+        ).all()
+        for site_group_id, aggregator_id, site_id in member_sites:
+            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id))
 
-    # Map the "site" relationship
-    orm_relationship_map_parent_entities(
-        cast(Iterable[TariffGeneratedRate | ArchiveTariffGeneratedRate], chain(active_rates, deleted_rates)),
-        lambda e: e.site_id,
-        {e.site_id: e for e in cast(Iterable[Site | ArchiveSite], chain(active_sites, deleted_sites))},
-        "site",
-    )
+    # A rate's parent Tariff can also restrict visibility via required_site_group_id - resolve each referenced
+    # Tariff's requirement (if any) and the membership of whatever SiteGroup it requires
+    referenced_tariff_ids = {e.tariff_id for e in chain(active_rates, deleted_rates)}
+    required_group_by_tariff_id: dict[int, int | None] = {}
+    if referenced_tariff_ids:
+        tariff_rows = (
+            await session.execute(
+                select(Tariff.tariff_id, Tariff.required_site_group_id).where(
+                    Tariff.tariff_id.in_(referenced_tariff_ids)
+                )
+            )
+        ).tuples()
+        required_group_by_tariff_id = dict(tariff_rows.all())
 
-    # localize start times using the new "site" relationship
-    for e in cast(Iterable[TariffGeneratedRate], chain(active_rates, deleted_rates)):
-        localize_start_time_for_entity(e, e.site.timezone_id)
+    referenced_required_group_ids = {gid for gid in required_group_by_tariff_id.values() if gid is not None}
+    member_site_ids_by_required_group: dict[int, set[int]] = {}
+    if referenced_required_group_ids:
+        required_members = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, SiteGroupAssignment.site_id).where(
+                    SiteGroupAssignment.site_group_id.in_(referenced_required_group_ids)
+                )
+            )
+        ).all()
+        for site_group_id, site_id in required_members:
+            member_site_ids_by_required_group.setdefault(site_group_id, set()).add(site_id)
+
+    def expand_per_site(
+        rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
+    ) -> list[tuple[int, int]]:
+        """Expands a single rate into one (aggregator_id, site_id) tuple per member site of its SiteGroup.
+
+        A member site is excluded if the rate's parent Tariff has a required_site_group_id set and the site isn't
+        a member of that SiteGroup"""
+        required_group_id = required_group_by_tariff_id.get(rate.tariff_id)
+        allowed_site_ids = (
+            None if required_group_id is None else member_site_ids_by_required_group.get(required_group_id, set())
+        )
+        return [
+            (aggregator_id, site_id)
+            for aggregator_id, site_id in member_sites_by_group_id.get(rate.site_group_id, [])
+            if allowed_site_ids is None or site_id in allowed_site_ids
+        ]
+
+    site_scoped_active_rates = [
+        SiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
+        for rate in active_rates
+        for aggregator_id, site_id in expand_per_site(rate)
+    ]
+    site_scoped_deleted_rates = [
+        ArchiveSiteScopedTariffGeneratedRate(aggregator_id, site_id, rate)
+        for rate in deleted_rates
+        for aggregator_id, site_id in expand_per_site(rate)
+    ]
 
     return [
-        AggregatorBatchedEntities(timestamp, SubscriptionResource.TARIFF_GENERATED_RATE, active_rates, deleted_rates),
         AggregatorBatchedEntities(
-            timestamp, SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE, active_rates, deleted_rates
+            timestamp,
+            SubscriptionResource.TARIFF_GENERATED_RATE,
+            site_scoped_active_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
+            site_scoped_deleted_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
+        ),
+        AggregatorBatchedEntities(
+            timestamp,
+            SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE,
+            site_scoped_active_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
+            site_scoped_deleted_rates,  # type: ignore # SiteScoped variables will work here - tests enforce it
         ),
     ]
 
 
 async def fetch_does_by_changed_at(
     session: AsyncSession, timestamp: datetime
-) -> AggregatorBatchedEntities[DynamicOperatingEnvelope, ArchiveDynamicOperatingEnvelope]:
+) -> AggregatorBatchedEntities[SiteScopedDynamicOperatingEnvelope, ArchiveSiteScopedDynamicOperatingEnvelope]:  # type: ignore # SiteScoped variables will work here - tests enforce it
     """Fetches all DOEs matching the specified changed_at and returns them keyed by their aggregator/site id
 
-    Will include the DynamicOperatingEnvelope.site relationship
-
-    Also fetches any site from the archive that was deleted at the specified timestamp"""
+    A DOE targets a SiteGroup (rather than a single site) - each changed/deleted DOE is expanded into one
+    SiteScopedDynamicOperatingEnvelope per member site of its SiteGroup (NOT every site in the system - only the
+    group's actual members, unlike the SiteControlGroup/FSA fan-out patterns elsewhere in this file). A DOE whose
+    SiteGroup currently has no members contributes no entries."""
 
     active_does, deleted_does = await fetch_entities_with_archive_by_datetime(
         session, DynamicOperatingEnvelope, ArchiveDynamicOperatingEnvelope, timestamp
     )
 
-    referenced_site_ids = {
-        e.site_id
+    referenced_site_group_ids = {
+        e.site_group_id
         for e in cast(
             Iterable[DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope], chain(active_does, deleted_does)
         )
     }
 
-    active_sites, deleted_sites = await fetch_entities_with_archive_by_id(
-        session, Site, ArchiveSite, referenced_site_ids
-    )
+    member_sites_by_group_id: dict[int, list[tuple[int, int]]] = {}
+    if referenced_site_group_ids:
+        member_sites = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, Site.aggregator_id, Site.site_id)
+                .join(Site, Site.site_id == SiteGroupAssignment.site_id)
+                .where(SiteGroupAssignment.site_group_id.in_(referenced_site_group_ids))
+            )
+        ).all()
+        for site_group_id, aggregator_id, site_id in member_sites:
+            member_sites_by_group_id.setdefault(site_group_id, []).append((aggregator_id, site_id))
 
-    # Map the "site" relationship
-    orm_relationship_map_parent_entities(
-        cast(Iterable[DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope], chain(active_does, deleted_does)),
-        lambda e: e.site_id,
-        {e.site_id: e for e in cast(Iterable[Site | ArchiveSite], chain(active_sites, deleted_sites))},
-        "site",
-    )
+    # A controls's parent SiteControlGroup can also restrict visibility via required_site_group_id - resolve each
+    # referenced SiteControlGroup's requirement (if any) and the membership of whatever SiteGroup it requires
+    referenced_scg_ids = {e.site_control_group_id for e in chain(active_does, deleted_does)}
+    required_group_by_scg_id: dict[int, int | None] = {}
+    if referenced_scg_ids:
+        scg_rows = (
+            await session.execute(
+                select(SiteControlGroup.site_control_group_id, SiteControlGroup.required_site_group_id).where(
+                    SiteControlGroup.site_control_group_id.in_(referenced_scg_ids)
+                )
+            )
+        ).tuples()
+        required_group_by_scg_id = dict(scg_rows.all())
 
-    # localize start times using the new "site" relationship
-    for e in cast(Iterable[DynamicOperatingEnvelope], chain(active_does, deleted_does)):
-        localize_start_time_for_entity(e, e.site.timezone_id)
+    referenced_required_group_ids = {gid for gid in required_group_by_scg_id.values() if gid is not None}
+    member_site_ids_by_required_group: dict[int, set[int]] = {}
+    if referenced_required_group_ids:
+        required_members = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, SiteGroupAssignment.site_id).where(
+                    SiteGroupAssignment.site_group_id.in_(referenced_required_group_ids)
+                )
+            )
+        ).all()
+        for site_group_id, site_id in required_members:
+            member_site_ids_by_required_group.setdefault(site_group_id, set()).add(site_id)
+
+    def expand_per_site(
+        control: DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope,
+    ) -> list[tuple[int, int]]:
+        """Expands a single control into one (aggregator_id, site_id) tuple per member site of its
+        SiteGroup.
+
+        A member site is excluded if the control's parent SiteControlGroup has a required_site_group_id set and the
+        site isn't a member of that SiteGroup"""
+        required_group_id = required_group_by_scg_id.get(control.site_control_group_id)
+        allowed_site_ids = (
+            None if required_group_id is None else member_site_ids_by_required_group.get(required_group_id, set())
+        )
+        return [
+            (aggregator_id, site_id)
+            for aggregator_id, site_id in member_sites_by_group_id.get(control.site_group_id, [])
+            if allowed_site_ids is None or site_id in allowed_site_ids
+        ]
+
+    site_scoped_active_does = [
+        SiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, control)
+        for control in active_does
+        for aggregator_id, site_id in expand_per_site(control)
+    ]
+    site_scoped_deleted_does = [
+        ArchiveSiteScopedDynamicOperatingEnvelope(aggregator_id, site_id, control)
+        for control in deleted_does
+        for aggregator_id, site_id in expand_per_site(control)
+    ]
 
     return AggregatorBatchedEntities(
-        timestamp, SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE, active_does, deleted_does
+        timestamp,
+        SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
+        site_scoped_active_does,  # type: ignore # SiteScoped variables will work here - tests enforce it
+        site_scoped_deleted_does,  # type: ignore # SiteScoped variables will work here - tests enforce it
     )
 
 
@@ -689,18 +817,49 @@ async def fetch_site_control_groups_by_changed_at(
         return AggregatorBatchedEntities(timestamp, SubscriptionResource.SITE_CONTROL_GROUP, [], [])
 
     # The site control group update will need to vary per Site so we generate an instance per site_id
-    aggregator_site_ids = (await session.execute(select(Site.aggregator_id, Site.site_id).order_by(Site.site_id))).all()
+    aggregator_site_ids = (
+        (await session.execute(select(Site.aggregator_id, Site.site_id).order_by(Site.site_id))).tuples().all()
+    )
+
+    # Groups with a required_site_group_id set are only visible to member sites of that group - resolve
+    # membership for any such groups referenced in this batch
+    referenced_required_group_ids = {
+        g.required_site_group_id
+        for g in cast(Iterable[SiteControlGroup | ArchiveSiteControlGroup], chain(active_groups, deleted_groups))
+        if g.required_site_group_id is not None
+    }
+    member_site_ids_by_required_group: dict[int, set[int]] = {}
+    if referenced_required_group_ids:
+        members = (
+            await session.execute(
+                select(SiteGroupAssignment.site_group_id, SiteGroupAssignment.site_id).where(
+                    SiteGroupAssignment.site_group_id.in_(referenced_required_group_ids)
+                )
+            )
+        ).all()
+        for site_group_id, site_id in members:
+            member_site_ids_by_required_group.setdefault(site_group_id, set()).add(site_id)
+
+    def visible_aggregator_site_ids(
+        group: SiteControlGroup | ArchiveSiteControlGroup,
+    ) -> Sequence[tuple[int, int]]:
+        """Returns the (aggregator_id, site_id) pairs that should be notified about group - all sites, unless
+        group.required_site_group_id restricts visibility to a specific SiteGroup's members."""
+        if group.required_site_group_id is None:
+            return aggregator_site_ids
+        member_site_ids = member_site_ids_by_required_group.get(group.required_site_group_id, set())
+        return [(agg_id, site_id) for agg_id, site_id in aggregator_site_ids if site_id in member_site_ids]
 
     site_scoped_active_groups: list[SiteScopedSiteControlGroup] = [
         SiteScopedSiteControlGroup(agg_id, site_id, active_group)
-        for agg_id, site_id in aggregator_site_ids
         for active_group in active_groups
+        for agg_id, site_id in visible_aggregator_site_ids(active_group)
     ]
 
     site_scoped_deleted_groups = [
         ArchiveSiteScopedSiteControlGroup(agg_id, site_id, deleted_group)
-        for agg_id, site_id in aggregator_site_ids
         for deleted_group in deleted_groups
+        for agg_id, site_id in visible_aggregator_site_ids(deleted_group)
     ]
 
     return AggregatorBatchedEntities(

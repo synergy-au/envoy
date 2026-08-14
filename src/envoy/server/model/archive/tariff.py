@@ -29,6 +29,7 @@ class ArchiveTariff(ArchiveBase):
     primacy: Mapped[int] = mapped_column(INTEGER)
 
     fsa_id: Mapped[int] = mapped_column(Integer)
+    required_site_group_id: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     created_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     changed_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -64,7 +65,7 @@ class ArchiveTariffGeneratedRate(ArchiveBase):
     tariff_generated_rate_id: Mapped[int] = mapped_column(BigInteger, index=True)
     tariff_id: Mapped[int] = mapped_column(INTEGER)
     tariff_component_id: Mapped[int] = mapped_column(BigInteger)
-    site_id: Mapped[int] = mapped_column(INTEGER)
+    site_group_id: Mapped[int] = mapped_column(INTEGER)
     calculation_log_id: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -80,17 +81,17 @@ class ArchiveTariffGeneratedRate(ArchiveBase):
 
     __table_args__ = (
         Index(
-            "archive_tariff_generated_rate_tariff_id_end_deleted_time_site",
+            "archive_tariff_generated_rate_tariff_id_end_deleted_time_group",
             "tariff_id",
             "end_time",
             "deleted_time",
-            "site_id",
+            "site_group_id",
         ),  # This is to support finding rates that have been deleted (or cancelled)
         Index(
-            "archive_tariff_generated_rate_tc_id_end_deleted_time_site",
+            "archive_tariff_generated_rate_tc_id_end_deleted_time_group",
             "tariff_component_id",
             "end_time",
             "deleted_time",
-            "site_id",
+            "site_group_id",
         ),  # This is to support finding rates that have been deleted (or cancelled)
     )
