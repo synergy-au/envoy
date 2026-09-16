@@ -1,7 +1,7 @@
 """add archive_runtime_server_config
 
-Revision ID: a1b2c3d4e5f6
-Revises: 4d68a22c9f62
+Revision ID: f0adfeb2247d
+Revises: d4103ffe88f4
 Create Date: 2026-08-20 00:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "a1b2c3d4e5f6"
-down_revision = "4d68a22c9f62"
+revision = "f0adfeb2247d"
+down_revision = "d4103ffe88f4"
 branch_labels = None
 depends_on = None
 
@@ -29,6 +29,8 @@ def upgrade() -> None:
         sa.Column("derpl_pollrate_seconds", sa.INTEGER(), nullable=True),
         sa.Column("derl_pollrate_seconds", sa.INTEGER(), nullable=True),
         sa.Column("mup_postrate_seconds", sa.INTEGER(), nullable=True),
+        sa.Column("tp_pollrate_seconds", sa.INTEGER(), nullable=True),
+        sa.Column("tti_pollrate_seconds", sa.INTEGER(), nullable=True),
         sa.Column("site_control_pow10_encoding", sa.INTEGER(), nullable=True),
         sa.Column("disable_edev_registration", sa.BOOLEAN(), nullable=True),
         sa.Column("archive_id", sa.Integer(), autoincrement=True, nullable=False),

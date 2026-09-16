@@ -23,6 +23,9 @@ class ArchiveRuntimeServerConfig(ArchiveBase):
     derpl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     derl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     mup_postrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+    tp_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+    tti_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+
     site_control_pow10_encoding: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 
     disable_edev_registration: Mapped[bool | None] = mapped_column(BOOLEAN, nullable=True)
