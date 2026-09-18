@@ -23,6 +23,7 @@ class ArchiveRuntimeServerConfig(ArchiveBase):
     derpl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     derl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     mup_postrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
+    mupl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     tp_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
     tti_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)
 

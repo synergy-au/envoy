@@ -61,6 +61,9 @@ class ConfigManager:
         if updated_values.mup_postrate_seconds is not None:
             existing_db_config.mup_postrate_seconds = updated_values.mup_postrate_seconds
 
+        if updated_values.mupl_pollrate_seconds is not None:
+            existing_db_config.mupl_pollrate_seconds = updated_values.mupl_pollrate_seconds
+
         if updated_values.tp_pollrate_seconds is not None:
             existing_db_config.tp_pollrate_seconds = updated_values.tp_pollrate_seconds
 
@@ -108,6 +111,7 @@ class ConfigManager:
             derl_pollrate_seconds=config.derl_pollrate_seconds,
             derpl_pollrate_seconds=config.derpl_pollrate_seconds,
             mup_postrate_seconds=config.mup_postrate_seconds,
+            mupl_pollrate_seconds=config.mupl_pollrate_seconds,
             tp_pollrate_seconds=config.tp_pollrate_seconds,
             tti_pollrate_seconds=config.tti_pollrate_seconds,
             site_control_pow10_encoding=config.site_control_pow10_encoding,
