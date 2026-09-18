@@ -26,6 +26,7 @@ class RuntimeServerConfig(Base):
         INTEGER, nullable=True
     )  # der list + all associated der resources
     mup_postrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)  # mirror usage point
+    mupl_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)  # mirror usage point list
 
     tp_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)  # tariff profile list
     tti_pollrate_seconds: Mapped[int | None] = mapped_column(INTEGER, nullable=True)  # time tariff interval list
