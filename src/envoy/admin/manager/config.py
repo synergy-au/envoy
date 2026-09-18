@@ -4,9 +4,11 @@ from envoy_schema.admin.schema.config import RuntimeServerConfigRequest, Runtime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from envoy.notification.manager.notification import NotificationManager
+from envoy.server.crud.archive import copy_rows_into_archive
 from envoy.server.crud.server import select_server_config
 from envoy.server.manager.server import _map_server_config
 from envoy.server.manager.time import utc_now
+from envoy.server.model.archive.server import ArchiveRuntimeServerConfig
 from envoy.server.model.server import RuntimeServerConfig as ConfigEntity
 from envoy.server.model.subscription import SubscriptionResource
 
@@ -25,6 +27,13 @@ class ConfigManager:
             existing_db_config = ConfigEntity(changed_time=now)
             session.add(existing_db_config)
         else:
+            # Archive the current record BEFORE we apply the new changes
+            await copy_rows_into_archive(
+                session,
+                ConfigEntity,
+                ArchiveRuntimeServerConfig,
+                lambda q: q.where(ConfigEntity.runtime_server_config_id == existing_db_config.runtime_server_config_id),
+            )
             existing_db_config.changed_time = now
 
         changed_fsal_pollrate = False
@@ -51,6 +60,9 @@ class ConfigManager:
 
         if updated_values.mup_postrate_seconds is not None:
             existing_db_config.mup_postrate_seconds = updated_values.mup_postrate_seconds
+
+        if updated_values.mupl_pollrate_seconds is not None:
+            existing_db_config.mupl_pollrate_seconds = updated_values.mupl_pollrate_seconds
 
         if updated_values.tp_pollrate_seconds is not None:
             existing_db_config.tp_pollrate_seconds = updated_values.tp_pollrate_seconds
@@ -99,6 +111,7 @@ class ConfigManager:
             derl_pollrate_seconds=config.derl_pollrate_seconds,
             derpl_pollrate_seconds=config.derpl_pollrate_seconds,
             mup_postrate_seconds=config.mup_postrate_seconds,
+            mupl_pollrate_seconds=config.mupl_pollrate_seconds,
             tp_pollrate_seconds=config.tp_pollrate_seconds,
             tti_pollrate_seconds=config.tti_pollrate_seconds,
             site_control_pow10_encoding=config.site_control_pow10_encoding,

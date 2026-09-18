@@ -11,6 +11,7 @@ class RuntimeServerConfig:
     derpl_pollrate_seconds: int = 60
     derl_pollrate_seconds: int = 60
     mup_postrate_seconds: int = 60
+    mupl_pollrate_seconds: int = 60
     tp_pollrate_seconds: int = 900
     tti_pollrate_seconds: int = 300
 
