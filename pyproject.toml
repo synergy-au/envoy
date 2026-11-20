@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 pythonpath = ["src/"]
 testpaths = "tests"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["error::DeprecationWarning"]
 addopts = "--strict-markers"
 markers = [
@@ -56,16 +57,15 @@ name = "envoy"
 dynamic = ["version", "readme"]
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v2.7.0-storage.0.10.0",
-    "fastapi>=0.94.1,<0.137", # Recent FastAPI versions appear to break route exclusion functionality
-    "sqlalchemy>=2.0.0",
+    "envoy_schema @ git+https://github.com/synergy-au/envoy-schema.git@v2.8.0-storage.0.10.0",
+    "fastapi",
+    "sqlalchemy[asyncio]>=2.1.0",
     "alembic",
     "tzlocal",
     "pydantic_xml[lxml]>=2.12.0",
     "pydantic!=2.7.0,!=2.12.0",
     "pydantic-xml!=2.9.1,!=2.17.1", # Known compatibility issues with pydantic and typing libs
     "pydantic-settings",
-    "python-dateutil",
     "asyncpg",
     "fastapi-async-sqlalchemy",
     "python-dotenv",
@@ -77,12 +77,14 @@ dependencies = [
     "intervaltree",
 ]
 
+[project.scripts]
+envoy-erd = "envoy.cli.erd:main"
+
 [project.optional-dependencies]
 dev = [
     "bandit",
     "ruff",
     "ty",
-    "types-python-dateutil",
     "types-tzlocal",
     "types-lxml",
     "coverage",
@@ -103,6 +105,7 @@ test = [
     "pytest-env",
     "freezegun",
 ]
+docs = ["paracelsus"]
 
 [tool.setuptools.package-data]
 "envoy" = ["py.typed", "server/alembic.ini"]
@@ -110,3 +113,9 @@ test = [
 [tool.setuptools.dynamic]
 version = { attr = "envoy.__version__" }
 readme = { file = ["README.md"], content-type = "text/markdown" }
+
+[tool.paracelsus]
+base = "envoy.server.model:Base"
+imports = [
+  "envoy.server.model"
+]

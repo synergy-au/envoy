@@ -5,7 +5,7 @@ from fastapi import HTTPException, Request, Response
 from pydantic_xml import BaseXmlModel
 from pydantic_xml.errors import ParsingError
 
-SEP_XML_MIME: str = "application/sep+xml; csipaus=1.3-beta_storage"
+SEP_XML_MIME: str = "application/sep+xml; csipaus=v1.3"
 
 LOCATION_HEADER_NAME: str = "Location"
 
@@ -15,7 +15,7 @@ TBaseXmlModel = TypeVar("TBaseXmlModel", bound=BaseXmlModel)
 class XmlResponse(Response):
     media_type = SEP_XML_MIME
 
-    def render(self, content: BaseXmlModel) -> str | bytes:  # ty:ignore[invalid-method-override] # Base is too restrictive
+    def render(self, content: BaseXmlModel) -> str | bytes:  # ty:ignore[incompatible-method-override] # Base is too restrictive
         return content.to_xml(skip_empty=False, exclude_none=True, exclude_unset=True)
 
 

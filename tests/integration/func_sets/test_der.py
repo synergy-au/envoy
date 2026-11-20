@@ -120,9 +120,9 @@ async def test_get_der(
     "site_id, has_entity",
     [
         (1, True),
-        (2, False),
-        (3, False),
-        (4, False),
+        (2, True),  # No sub entities in DB - minimal defaults returned
+        (3, False),  # Belongs to a different aggregator
+        (4, True),  # No sub entities in DB - minimal defaults returned
     ],
 )
 @pytest.mark.anyio
@@ -201,7 +201,7 @@ async def snapshot_sub_entity_changed_created_changed_time(
     stmt = select(sub_entity_type.created_time, sub_entity_type.changed_time).where(  # type: ignore
         sub_entity_type.site_id == site_id  # type: ignore
     )
-    return (await session.execute(stmt)).one()  # type: ignore
+    return (await session.execute(stmt)).one()
 
 
 async def assert_sub_entity_count(

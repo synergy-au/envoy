@@ -110,7 +110,7 @@ async def _does_at_timestamp(
 
     Orders by 2030.5 requirements on DERControl which is start ASC, creation DESC, id DESC"""
 
-    select_clause: Select[tuple[int]] | Select[tuple[DOE]]
+    select_clause: Select[int] | Select[DOE]
     if is_counting:
         select_clause = select(func.count()).select_from(DOE)
     else:
@@ -360,7 +360,7 @@ async def count_does_at_timestamp(
 
     return await _does_at_timestamp(
         True, session, site_control_group_id, site_group_ids, timestamp, 0, changed_after, None
-    )  # ty:ignore[invalid-return-type] # Test coverage will ensure that it's an entity list
+    )  # ty:ignore[invalid-explicit-return] # Test coverage will ensure that it's an entity list
 
 
 async def select_does_at_timestamp(
@@ -386,7 +386,7 @@ async def select_does_at_timestamp(
 
     return await _does_at_timestamp(
         False, session, site_control_group_id, site_group_ids, timestamp, start, changed_after, limit
-    )  # ty:ignore[invalid-return-type]  # Test coverage will ensure that it's an entity list
+    )  # ty:ignore[invalid-explicit-return]  # Test coverage will ensure that it's an entity list
 
 
 async def _site_control_groups(
@@ -405,7 +405,7 @@ async def _site_control_groups(
 
     Orders by 2030.5 requirements on DERProgram which is primacy ASC, primary key DESC"""
 
-    stmt: Select[tuple[int]] | Select[tuple[SiteControlGroup]]
+    stmt: Select[int] | Select[SiteControlGroup]
     if is_counting:
         stmt = select(func.count()).select_from(SiteControlGroup)
     else:
@@ -457,7 +457,7 @@ async def select_site_control_groups(
     # Test coverage will ensure that it's an entity list
     return await _site_control_groups(
         False, session, start, changed_after, limit, fsa_id, include_defaults, site_group_ids
-    )  # ty:ignore[invalid-return-type]
+    )  # ty:ignore[invalid-explicit-return]
 
 
 async def count_site_control_groups(
@@ -483,23 +483,19 @@ async def count_site_control_groups(
         fsa_id,
         False,
         site_group_ids,
-    )  # ty:ignore[invalid-return-type]
+    )  # ty:ignore[invalid-explicit-return]
 
 
 async def count_site_control_groups_by_fsa_id(session: AsyncSession) -> dict[int, int]:
     """Returns a dictionary keyed by the SiteControlGroup.fsa_id with a value indicating the count
     of SiteControlGroup's with that fsa_id"""
     kvps = (
-        (
-            await session.execute(
-                select(SiteControlGroup.fsa_id, func.count())
-                .group_by(SiteControlGroup.fsa_id)
-                .where(SiteControlGroup.fsa_id.is_not(None))
-            )
+        await session.execute(
+            select(SiteControlGroup.fsa_id, func.count())
+            .group_by(SiteControlGroup.fsa_id)
+            .where(SiteControlGroup.fsa_id.is_not(None))
         )
-        .tuples()
-        .all()
-    )
+    ).all()
 
     # We safely cast here because we've filtered out the None values during the SQL query
     return dict(cast(list[tuple[int, int]], kvps))

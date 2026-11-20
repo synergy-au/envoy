@@ -2,6 +2,9 @@ FROM python:3.13-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /bin/uv
 
 
+# Storage Extension only - Install git for envoy-schema dependency (storage extension)
+RUN apt-get update && apt-get install -y --no-install-recommends git
+
 # pre-compile .pyc at build time for faster startup; copy instead of hardlink (cache mount
 # requirement); strip dev deps; use the image's Python rather than downloading a new one
 ENV UV_COMPILE_BYTECODE=1 \
