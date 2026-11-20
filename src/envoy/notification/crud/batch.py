@@ -48,6 +48,7 @@ from envoy.server.model.archive.site import (
     ArchiveSiteDERStatus,
 )
 from envoy.server.model.archive.site_reading import ArchiveSiteReading, ArchiveSiteReadingType
+from envoy.server.model.archive.subscription import ArchiveSubscription
 from envoy.server.model.archive.tariff import ArchiveTariff, ArchiveTariffComponent, ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup, SiteControlGroupDefault
 from envoy.server.model.site import (
@@ -119,7 +120,7 @@ class AggregatorBatchedEntities(Generic[TResourceModel, TArchiveResourceModel]):
         return batch
 
 
-def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tuple:
+def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tuple:  # noqa: C901
     """
     Gets a multipart key in the form of a tuple that describes entity as a single sep2 resource. This is because
     sep2 Notifications are only sent out underneath a single resource (eg /edev/3/derp/doe/derc/1) which means all
@@ -195,6 +196,9 @@ def get_batch_key(resource: SubscriptionResource, entity: TResourceModel) -> tup
     elif resource == SubscriptionResource.COMBINED_TARIFF_GENERATED_RATE:
         rate = cast(SiteScopedTariffGeneratedRate, entity)
         return (rate.aggregator_id, rate.original.tariff_id, rate.site_id)
+    elif resource == SubscriptionResource.SUBSCRIPTION:
+        sub = cast(Subscription, entity)
+        return (sub.aggregator_id, sub.subscription_id)
     else:
         raise NotificationError(f"{resource} is unsupported - unable to identify appropriate batch key")
 
@@ -359,13 +363,9 @@ async def fetch_rates_by_changed_at(
     referenced_tariff_ids = {e.tariff_id for e in chain(active_rates, deleted_rates)}
     required_group_by_tariff_id: dict[int, int | None] = {}
     if referenced_tariff_ids:
-        tariff_rows = (
-            await session.execute(
-                select(Tariff.tariff_id, Tariff.required_site_group_id).where(
-                    Tariff.tariff_id.in_(referenced_tariff_ids)
-                )
-            )
-        ).tuples()
+        tariff_rows = await session.execute(
+            select(Tariff.tariff_id, Tariff.required_site_group_id).where(Tariff.tariff_id.in_(referenced_tariff_ids))
+        )
         required_group_by_tariff_id = dict(tariff_rows.all())
 
     referenced_required_group_ids = {gid for gid in required_group_by_tariff_id.values() if gid is not None}
@@ -463,13 +463,11 @@ async def fetch_does_by_changed_at(
     referenced_scg_ids = {e.site_control_group_id for e in chain(active_does, deleted_does)}
     required_group_by_scg_id: dict[int, int | None] = {}
     if referenced_scg_ids:
-        scg_rows = (
-            await session.execute(
-                select(SiteControlGroup.site_control_group_id, SiteControlGroup.required_site_group_id).where(
-                    SiteControlGroup.site_control_group_id.in_(referenced_scg_ids)
-                )
+        scg_rows = await session.execute(
+            select(SiteControlGroup.site_control_group_id, SiteControlGroup.required_site_group_id).where(
+                SiteControlGroup.site_control_group_id.in_(referenced_scg_ids)
             )
-        ).tuples()
+        )
         required_group_by_scg_id = dict(scg_rows.all())
 
     referenced_required_group_ids = {gid for gid in required_group_by_scg_id.values() if gid is not None}
@@ -817,9 +815,7 @@ async def fetch_site_control_groups_by_changed_at(
         return AggregatorBatchedEntities(timestamp, SubscriptionResource.SITE_CONTROL_GROUP, [], [])
 
     # The site control group update will need to vary per Site so we generate an instance per site_id
-    aggregator_site_ids = (
-        (await session.execute(select(Site.aggregator_id, Site.site_id).order_by(Site.site_id))).tuples().all()
-    )
+    aggregator_site_ids = (await session.execute(select(Site.aggregator_id, Site.site_id).order_by(Site.site_id))).all()
 
     # Groups with a required_site_group_id set are only visible to member sites of that group - resolve
     # membership for any such groups referenced in this batch
@@ -942,3 +938,33 @@ async def fetch_tariff_components_by_changed_at(
         site_scoped_active_comps,  # ty:ignore[invalid-argument-type]
         site_scoped_deleted_comps,  # ty:ignore[invalid-argument-type]
     )
+
+
+async def fetch_deleted_subscriptions_by_changed_at(
+    session: AsyncSession, timestamp: datetime
+) -> AggregatorBatchedEntities[Subscription, ArchiveSubscription]:
+    """Fetches all Subscriptions that were deleted at the specified timestamp (from the archive) and returns them keyed
+    by their aggregator/subscription id.
+
+    Changes to existing Subscriptions (eg renewals) are NOT returned - they don't generate any notifications. Only
+    deletions are relevant (they require a final "subscription cancelled" notification)"""
+
+    _, deleted_subs = await fetch_entities_with_archive_by_datetime(
+        session, Subscription, ArchiveSubscription, timestamp
+    )
+    return AggregatorBatchedEntities(timestamp, SubscriptionResource.SUBSCRIPTION, [], deleted_subs)
+
+
+async def select_site_ids_deleted_at(session: AsyncSession, site_ids: Iterable[int], timestamp: datetime) -> set[int]:
+    """Returns the subset of site_ids that were deleted (according to the archive) at exactly timestamp"""
+    site_ids = set(site_ids)
+    if not site_ids:
+        return set()
+
+    resp = await session.execute(
+        select(ArchiveSite.site_id)
+        .where(ArchiveSite.deleted_time == timestamp)
+        .where(ArchiveSite.site_id.in_(site_ids))
+        .distinct()
+    )
+    return set(resp.scalars().all())

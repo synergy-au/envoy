@@ -99,6 +99,7 @@ async def test_get_connectionpoint_none_nmi(
     "site_id, cert, update_nmi_value, expected_result, expected_nmi",
     [
         (1, AGG_1_VALID_CERT, "1212121212", HTTPStatus.CREATED, "1212121212"),
+        (1, AGG_1_VALID_CERT, "1212121212121212121212", HTTPStatus.BAD_REQUEST, "1111111111"),  # NMI too long
         (6, REGISTERED_DEVICE_CERT, "1212121212", HTTPStatus.CREATED, "1212121212"),
         (5, REGISTERED_DEVICE_CERT, "1212121212", HTTPStatus.FORBIDDEN, "5555555555"),  # Wrong device for device cert
         (1, REGISTERED_DEVICE_CERT, "1212121212", HTTPStatus.FORBIDDEN, "1111111111"),  # Wrong device for device cert
@@ -211,9 +212,7 @@ async def test_connectionpoint_update_bad_xml(client: AsyncClient, connection_po
     """Tests malformed XML on the endpoint results in a BadRequest"""
 
     # The closing tag on ID has an incorrect namespace
-    bad_xml = (
-        '<ConnectionPoint xmlns="http://csipaus.org/ns/v1.3-beta/storage"><id>1111111111</csipaus:id></ConnectionPoint>'
-    )
+    bad_xml = '<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3"><id>1111111111</csipaus:id></ConnectionPoint>'
 
     href = connection_point_uri_format.format(site_id=1)
     response = await client.put(url=href, headers={cert_header: urllib.parse.quote(AGG_1_VALID_CERT)}, content=bad_xml)
